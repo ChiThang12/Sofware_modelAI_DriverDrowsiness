@@ -2,8 +2,6 @@
 
 Hệ thống tiền xử lý dữ liệu được tối ưu hóa đặc biệt cho thiết kế ASIC.
 
-## 🎯 Tối ưu hóa cho ASIC
-
 ### 1. **Fixed-Point Arithmetic (Q0.7)**
 ```
 Format: Q0.7 (8-bit int8)
@@ -61,13 +59,12 @@ SRAM required: 64 KB (input + intermediate buffers)
 ## 📁 Cấu trúc Files
 
 ### Core Files (ASIC-specific):
-- **`config_asic.py`** - Cấu hình ASIC (Q0.7, power-of-2, etc.)
-- **`preprocessing_asic.py`** - ASIC-friendly preprocessing functions
-- **`preprocess_data_asic.py`** - Main preprocessing script
-- **`split_data_asic.py`** - Train/test splitting
-- **`run_all_asic.py`** - Master script
-- **`colab_loader_asic.py`** - Colab loader với Q0.7 conversion
-- **`ASIC_DESIGN_GUIDE.md`** - Hướng dẫn thiết kế ASIC chi tiết
+- **`config.py`** - Cấu hình ASIC (Q0.7, power-of-2, etc.)
+- **`preprocessing.py`** - ASIC-friendly preprocessing functions
+- **`preprocess_data.py`** - Main preprocessing script
+- **`split_data.py`** - Train/test splitting
+- **`run_all.py`** - Master script
+- **`colab_loader.py`** - Colab loader với Q0.7 conversion
 
 ### Support Files:
 - **`requirements.txt`** - Dependencies
