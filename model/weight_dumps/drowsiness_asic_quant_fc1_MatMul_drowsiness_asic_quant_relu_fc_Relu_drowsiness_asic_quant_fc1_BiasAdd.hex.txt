@@ -1,0 +1,35 @@
+// drowsiness_asic/quant_fc1/MatMul;drowsiness_asic/quant_relu_fc/Relu;drowsiness_asic/quant_fc1/BiasAdd
+// $readmemh("drowsiness_asic_quant_fc1_MatMul_drowsiness_asic_quant_relu_fc_Relu_drowsiness_asic_quant_fc1_BiasAdd.hex.txt", mem);
+
+B7
+B7
+30
+FE
+CD
+B7
+B7
+C3
+0B
+B7
+B7
+EF
+B7
+B7
+E6
+D1
+E2
+E3
+B7
+B7
+B7
+BF
+B7
+08
+B7
+FF
+DB
+D7
+B7
+14
+B7
+B7

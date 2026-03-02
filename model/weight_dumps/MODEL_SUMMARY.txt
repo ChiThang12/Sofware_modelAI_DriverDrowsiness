@@ -1,0 +1,29 @@
+==========================================================================================
+MODEL WEIGHT SUMMARY
+==========================================================================================
+
+ Idx  Name                                                Shape                 Dtype                N      KB  Kind
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   0  serving_default_input_q07:0                         [1, 128, 128, 1]      int8            16,384   16.00  weight
+   2  drowsiness_asic/quant_conv1/Conv2D;drowsiness_asic/quant_conv1/LastValueQuant/FakeQuantWithMinMaxVarsPerChannel  [32, 3, 3, 1]         int8               288    0.28  weight
+   3  tfl.pseudo_qconst3                                  [32]                  int32               32    0.12  bias
+   6  drowsiness_asic/quant_conv2/Conv2D;drowsiness_asic/quant_conv2/LastValueQuant/FakeQuantWithMinMaxVarsPerChannel  [64, 3, 3, 32]        int8            18,432   18.00  weight
+   7  tfl.pseudo_qconst2                                  [64]                  int32               64    0.25  bias
+  10  drowsiness_asic/quant_conv3/Conv2D;drowsiness_asic/quant_conv3/LastValueQuant/FakeQuantWithMinMaxVarsPerChannel  [128, 3, 3, 64]       int8            73,728   72.00  weight
+  11  tfl.pseudo_qconst1                                  [128]                 int32              128    0.50  bias
+  14  drowsiness_asic/quant_conv4/Conv2D;drowsiness_asic/quant_conv4/LastValueQuant/FakeQuantWithMinMaxVarsPerChannel  [128, 3, 3, 128]      int8           147,456  144.00  weight
+  15  tfl.pseudo_qconst                                   [128]                 int32              128    0.50  bias
+  17  drowsiness_asic/quant_gap/Mean                      [1, 128]              int8               128    0.12  weight
+  18  tfl.pseudo_qconst4                                  [32, 128]             int8             4,096    4.00  weight
+  19  tfl.pseudo_qconst6                                  [32]                  int32               32    0.12  bias
+  20  drowsiness_asic/quant_fc1/MatMul;drowsiness_asic/quant_relu_fc/Relu;drowsiness_asic/quant_fc1/BiasAdd  [1, 32]               int8                32    0.03  weight
+  21  drowsiness_asic/quant_output/MatMul;drowsiness_asic/quant_output/LastValueQuant/FakeQuantWithMinMaxVars  [1, 32]               int8                32    0.03  weight
+  22  tfl.pseudo_qconst5                                  [1]                   int32                1    0.00  bias
+  23  StatefulPartitionedCall:0                           [1, 1]                int8                 1    0.00  weight
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+Weight SRAM : 260,577 bytes  = 254.47 KB  (int8)
+Bias ROM    : 1,540 bytes  = 1.50 KB  (int32)
+
+Input  scale=0.0039215689,  zp=-128
+Output scale=0.0665257946,  zp=-2

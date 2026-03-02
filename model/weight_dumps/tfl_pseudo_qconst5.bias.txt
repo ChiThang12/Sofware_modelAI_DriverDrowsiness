@@ -1,0 +1,5 @@
+// Bias: tfl.pseudo_qconst5
+// Shape: [1], int32
+
+// idx,  decimal,       hex_32bit
+    0,           118,  00000076

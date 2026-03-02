@@ -1,0 +1,35 @@
+// drowsiness_asic/quant_output/MatMul;drowsiness_asic/quant_output/LastValueQuant/FakeQuantWithMinMaxVars
+// $readmemh("drowsiness_asic_quant_output_MatMul_drowsiness_asic_quant_output_LastValueQuant_FakeQuantWithMinMaxVars.hex.txt", mem);
+
+6D
+38
+A1
+98
+E9
+1E
+07
+A3
+B8
+77
+FC
+7D
+AE
+0A
+62
+3E
+B5
+4B
+3F
+55
+D1
+10
+0B
+81
+7A
+90
+E6
+6E
+C9
+28
+D3
+11

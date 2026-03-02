@@ -1,0 +1,3 @@
+// StatefulPartitionedCall:0 — shaped view
+// Shape: [1, 1]
+// out[  0]:  -48

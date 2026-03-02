@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASIC CNN — Sơ đồ khối & RTL Datapath</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Space+Grotesk:wght@300;400;600;700&display=swap');
+
+  :root {
+    --bg:        #0a0e1a;
+    --bg2:       #0f1628;
+    --bg3:       #141d35;
+    --border:    #1e2d52;
+    --accent1:   #00d4ff;
+    --accent2:   #7c4dff;
+    --accent3:   #00ff9d;
+    --accent4:   #ff6b35;
+    --accent5:   #ffd60a;
+    --text:      #e2e8f0;
+    --textdim:   #64748b;
+    --conv-c:    #0d2847;
+    --conv-b:    #00d4ff;
+    --pool-c:    #1a0d47;
+    --pool-b:    #7c4dff;
+    --fc-c:      #0d2b1a;
+    --fc-b:      #00ff9d;
+    --gap-c:     #2b1a0d;
+    --gap-b:     #ff6b35;
+    --out-c:     #2b1a00;
+    --out-b:     #ffd60a;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Grotesk', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrapper { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 32px 24px 80px; }
+
+  /* Header */
+  .header { text-align: center; padding: 40px 0 48px; }
+  .header h1 {
+    font-size: clamp(1.6rem, 4vw, 2.8rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--accent1), var(--accent2), var(--accent3));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    margin-bottom: 10px;
+  }
+  .header p { color: var(--textdim); font-size: 0.95rem; letter-spacing: 0.05em; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 8px; justify-content: center; margin-bottom: 40px; flex-wrap: wrap; }
+  .tab {
+    padding: 8px 20px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--bg2); color: var(--textdim); cursor: pointer;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; font-weight: 600;
+    letter-spacing: 0.05em; transition: all 0.2s;
+  }
+  .tab:hover { border-color: var(--accent1); color: var(--accent1); }
+  .tab.active { background: var(--accent1); border-color: var(--accent1); color: #000; }
+
+  /* Panel */
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* ═══════════════════════════════════════════════════════
+     MAIN FLOW DIAGRAM
+  ═══════════════════════════════════════════════════════ */
+  .flow { display: flex; flex-direction: column; gap: 0; align-items: center; }
+
+  .flow-row {
+    display: flex; align-items: center; gap: 0; width: 100%;
+    justify-content: center; flex-wrap: nowrap;
+  }
+
+  /* Arrow connector */
+  .arrow {
+    display: flex; flex-direction: column; align-items: center;
+    color: var(--textdim); font-size: 0.7rem; min-width: 60px;
+    flex-shrink: 0;
+  }
+  .arrow-line {
+    width: 40px; height: 2px; background: linear-gradient(90deg, var(--border), var(--accent1));
+    position: relative;
+  }
+  .arrow-line::after {
+    content: ''; position: absolute; right: -6px; top: -4px;
+    border: 5px solid transparent; border-left: 8px solid var(--accent1);
+  }
+  .arrow-label { font-size: 0.62rem; color: var(--textdim); margin-top: 4px; text-align: center; font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+
+  /* Block */
+  .block {
+    border-radius: 12px; padding: 14px 16px; cursor: pointer;
+    border: 1.5px solid; transition: all 0.25s; position: relative;
+    min-width: 130px; max-width: 160px; flex-shrink: 0;
+    text-align: center;
+  }
+  .block:hover { transform: translateY(-3px); filter: brightness(1.2); }
+  .block.active-block { transform: translateY(-3px); filter: brightness(1.3); box-shadow: 0 0 24px currentColor; }
+
+  .block-tag {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.62rem;
+    font-weight: 700; letter-spacing: 0.12em; margin-bottom: 4px;
+    opacity: 0.85;
+  }
+  .block-title { font-size: 0.88rem; font-weight: 700; line-height: 1.2; }
+  .block-sub { font-size: 0.68rem; opacity: 0.7; margin-top: 4px; font-family: 'JetBrains Mono', monospace; }
+  .block-shape {
+    font-size: 0.62rem; font-family: 'JetBrains Mono', monospace;
+    margin-top: 8px; padding: 4px 6px; border-radius: 4px;
+    background: rgba(0,0,0,0.3); opacity: 0.9;
+  }
+
+  .blk-conv  { background: var(--conv-c); border-color: var(--conv-b); color: var(--conv-b); }
+  .blk-pool  { background: var(--pool-c); border-color: var(--pool-b); color: var(--pool-b); }
+  .blk-gap   { background: var(--gap-c);  border-color: var(--gap-b);  color: var(--gap-b);  }
+  .blk-fc    { background: var(--fc-c);   border-color: var(--fc-b);   color: var(--fc-b);   }
+  .blk-out   { background: var(--out-c);  border-color: var(--out-b);  color: var(--out-b);  }
+  .blk-input { background: #0d1a2b; border-color: #334155; color: #94a3b8; }
+
+  /* Vertical arrow */
+  .v-arrow {
+    width: 2px; height: 28px;
+    background: linear-gradient(to bottom, var(--border), var(--accent1));
+    position: relative; margin: 0 auto;
+  }
+  .v-arrow::after {
+    content: ''; position: absolute; bottom: -6px; left: -4px;
+    border: 4px solid transparent; border-top: 8px solid var(--accent1);
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     DETAIL PANEL
+  ═══════════════════════════════════════════════════════ */
+  .detail-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 32px;
+  }
+  @media (max-width: 900px) { .detail-grid { grid-template-columns: 1fr; } }
+
+  .detail-card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+    padding: 22px; transition: all 0.3s;
+  }
+  .detail-card.highlight {
+    border-color: var(--accent1);
+    box-shadow: 0 0 20px rgba(0,212,255,0.15);
+  }
+  .detail-card h3 {
+    font-size: 0.75rem; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--accent1); margin-bottom: 14px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--border);
+  }
+
+  /* Info rows */
+  .info-row { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 0; border-bottom: 1px solid rgba(30,45,82,0.5); }
+  .info-row:last-child { border-bottom: none; }
+  .info-key { color: var(--textdim); font-size: 0.78rem; }
+  .info-val { font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--text); }
+  .info-val.hi { color: var(--accent3); }
+  .info-val.warn { color: var(--accent4); }
+  .info-val.note { color: var(--accent5); }
+
+  /* Formula */
+  .formula-box {
+    background: #060b14; border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; margin: 10px 0;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.78rem;
+    line-height: 1.8; overflow-x: auto;
+  }
+  .formula-box .cmt { color: #4a6080; }
+  .formula-box .kw  { color: var(--accent2); }
+  .formula-box .num { color: var(--accent4); }
+  .formula-box .var { color: var(--accent1); }
+  .formula-box .fn  { color: var(--accent3); }
+  .formula-box .str { color: var(--accent5); }
+
+  /* Steps */
+  .steps { display: flex; flex-direction: column; gap: 8px; }
+  .step {
+    display: flex; gap: 12px; align-items: flex-start;
+    background: rgba(0,0,0,0.2); border-radius: 8px; padding: 10px 12px;
+  }
+  .step-num {
+    width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem; font-weight: 700;
+  }
+  .step-text { font-size: 0.78rem; color: var(--text); line-height: 1.5; }
+  .step-text code { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 3px; color: var(--accent1); }
+
+  /* Bit-width table */
+  .bw-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+  .bw-table th { background: var(--bg3); color: var(--textdim); padding: 7px 10px; text-align: left; font-weight: 600; letter-spacing: 0.04em; border-bottom: 1px solid var(--border); }
+  .bw-table td { padding: 6px 10px; border-bottom: 1px solid rgba(30,45,82,0.4); font-family: 'JetBrains Mono', monospace; }
+  .bw-table tr:last-child td { border-bottom: none; }
+  .tag { display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.06em; }
+  .tag-i8  { background: rgba(0,212,255,0.15); color: var(--accent1); }
+  .tag-i32 { background: rgba(124,77,255,0.15); color: var(--accent2); }
+  .tag-i64 { background: rgba(255,107,53,0.15); color: var(--accent4); }
+  .tag-f   { background: rgba(0,255,157,0.15); color: var(--accent3); }
+
+  /* Tensor vis */
+  .tensor-vis { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+  .tensor-dim { text-align: center; }
+  .tensor-box {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 4px; font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem; padding: 4px 8px; color: var(--text);
+  }
+  .tensor-box.in  { border-color: var(--accent1); color: var(--accent1); background: rgba(0,212,255,0.06); }
+  .tensor-box.out { border-color: var(--accent3); color: var(--accent3); background: rgba(0,255,157,0.06); }
+  .tensor-box.w   { border-color: var(--accent5); color: var(--accent5); background: rgba(255,214,10,0.06); }
+  .tensor-box.b   { border-color: var(--accent4); color: var(--accent4); background: rgba(255,107,53,0.06); }
+  .tensor-label { font-size: 0.6rem; color: var(--textdim); margin-top: 3px; }
+  .tensor-arrow { color: var(--accent2); font-size: 1rem; }
+
+  /* Summary bar */
+  .summary-bar {
+    display: flex; gap: 12px; flex-wrap: wrap; margin: 24px 0;
+    padding: 16px; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .stat { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 100px; }
+  .stat-val { font-size: 1.3rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+  .stat-key { font-size: 0.65rem; color: var(--textdim); letter-spacing: 0.05em; margin-top: 2px; }
+
+  /* ═══════════════════════════════════════════════════════
+     VERILOG PANEL
+  ═══════════════════════════════════════════════════════ */
+  .verilog-section { margin-bottom: 32px; }
+  .verilog-section h3 {
+    font-size: 0.75rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent4); margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+  .vcode {
+    background: #060b14; border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;
+    line-height: 1.85; overflow-x: auto; white-space: pre;
+  }
+  .vc  { color: #4a6080; }
+  .vk  { color: var(--accent2); font-weight: 600; }
+  .vn  { color: var(--accent4); }
+  .vv  { color: var(--accent1); }
+  .vf  { color: var(--accent3); }
+  .vs  { color: var(--accent5); }
+  .vw  { color: #c084fc; }
+
+  /* Tooltip */
+  .tooltip-wrapper { position: relative; display: inline; }
+  .tooltip {
+    position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%);
+    background: var(--bg3); border: 1px solid var(--accent1); border-radius: 6px;
+    padding: 8px 12px; font-size: 0.72rem; white-space: nowrap;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 100;
+    color: var(--text);
+  }
+  .tooltip-wrapper:hover .tooltip { opacity: 1; }
+
+  /* selected layer highlight */
+  .layer-selector { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+  .lbtn {
+    padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--bg2); color: var(--textdim); cursor: pointer;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; transition: all 0.2s;
+  }
+  .lbtn:hover { border-color: var(--accent1); color: var(--accent1); }
+  .lbtn.sel { border-color: var(--accent4); color: var(--accent4); background: rgba(255,107,53,0.1); }
+
+  .note-box {
+    background: rgba(255,214,10,0.06); border: 1px solid rgba(255,214,10,0.25);
+    border-left: 3px solid var(--accent5); border-radius: 8px; padding: 12px 16px;
+    font-size: 0.78rem; color: var(--text); line-height: 1.6; margin: 12px 0;
+  }
+  .note-box strong { color: var(--accent5); }
+
+  /* Responsive flow */
+  @media (max-width: 1100px) {
+    .block { min-width: 110px; max-width: 140px; }
+    .arrow { min-width: 40px; }
+    .arrow-line { width: 28px; }
+  }
+  @media (max-width: 800px) {
+    .flow-row { flex-wrap: wrap; }
+    .block { min-width: 100px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- Header -->
+  <div class="header">
+    <h1>ASIC Drowsiness CNN — Kiến trúc & RTL Datapath</h1>
+    <p>drowsiness_asic_int8.tflite &nbsp;·&nbsp; INT8 Quantized &nbsp;·&nbsp; 254 KB Weight SRAM</p>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('flow')">📊 Flow Diagram</div>
+    <div class="tab" onclick="switchTab('detail')">🔍 Chi tiết Layer</div>
+    <div class="tab" onclick="switchTab('datapath')">⚙️ Datapath PE</div>
+    <div class="tab" onclick="switchTab('rtl')">💻 RTL / Verilog</div>
+  </div>
+
+  <!-- ═══════════ TAB 1: FLOW DIAGRAM ═══════════ -->
+  <div id="tab-flow" class="panel active">
+
+    <div class="summary-bar">
+      <div class="stat"><span class="stat-val" style="color:var(--accent1)">254 KB</span><span class="stat-key">Weight SRAM (int8)</span></div>
+      <div class="stat"><span class="stat-val" style="color:var(--accent2)">1.5 KB</span><span class="stat-key">Bias ROM (int32)</span></div>
+      <div class="stat"><span class="stat-val" style="color:var(--accent3)">~2.4B</span><span class="stat-key">Total MACs</span></div>
+      <div class="stat"><span class="stat-val" style="color:var(--accent4)">7</span><span class="stat-key">Layers</span></div>
+      <div class="stat"><span class="stat-val" style="color:var(--accent5)">1 bit</span><span class="stat-key">Output (logit)</span></div>
+    </div>
+
+    <div class="flow">
+
+      <!-- INPUT -->
+      <div class="flow-row">
+        <div class="block blk-input" onclick="selectLayer('input')">
+          <div class="block-tag">INPUT</div>
+          <div class="block-title">Pixel Q0.7</div>
+          <div class="block-sub">grayscale + landmarks</div>
+          <div class="block-shape">[1, 128, 128, 1]<br>int8 · zp=−128</div>
+        </div>
+      </div>
+
+      <div class="v-arrow"></div>
+
+      <!-- CONV1 + POOL1 -->
+      <div class="flow-row">
+        <div class="block blk-conv" onclick="selectLayer('conv1')">
+          <div class="block-tag">LAYER 1</div>
+          <div class="block-title">Conv2D</div>
+          <div class="block-sub">32 filters · 3×3 · same</div>
+          <div class="block-shape">W: [32,3,3,1]<br>288 B · 32 scales</div>
+        </div>
+        <div class="arrow">
+          <div class="arrow-line"></div>
+          <div class="arrow-label">+ bias<br>→ ReLU</div>
+        </div>
+        <div class="block blk-pool" onclick="selectLayer('pool1')">
+          <div class="block-tag">LAYER 1b</div>
+          <div class="block-title">MaxPool</div>
+          <div class="block-sub">2×2 · stride=2</div>
+          <div class="block-shape">128×128<br>→ 64×64</div>
+        </div>
+      </div>
+      <div style="text-align:center;color:var(--textdim);font-family:'JetBrains Mono',monospace;font-size:0.7rem;margin:4px 0">output: [1, 64, 64, 32]</div>
+
+      <div class="v-arrow"></div>
+
+      <!-- CONV2 + POOL2 -->
+      <div class="flow-row">
+        <div class="block blk-conv" onclick="selectLayer('conv2')">
+          <div class="block-tag">LAYER 2</div>
+          <div class="block-title">Conv2D</div>
+          <div class="block-sub">64 filters · 3×3 · same</div>
+          <div class="block-shape">W: [64,3,3,32]<br>18 KB · 64 scales</div>
+        </div>
+        <div class="arrow">
+          <div class="arrow-line"></div>
+          <div class="arrow-label">+ bias<br>→ ReLU</div>
+        </div>
+        <div class="block blk-pool" onclick="selectLayer('pool2')">
+          <div class="block-tag">LAYER 2b</div>
+          <div class="block-title">MaxPool</div>
+          <div class="block-sub">2×2 · stride=2</div>
+          <div class="block-shape">64×64<br>→ 32×32</div>
+        </div>
+      </div>
+      <div style="text-align:center;color:var(--textdim);font-family:'JetBrains Mono',monospace;font-size:0.7rem;margin:4px 0">output: [1, 32, 32, 64]</div>
+
+      <div class="v-arrow"></div>
+
+      <!-- CONV3 + POOL3 -->
+      <div class="flow-row">
+        <div class="block blk-conv" onclick="selectLayer('conv3')">
+          <div class="block-tag">LAYER 3</div>
+          <div class="block-title">Conv2D</div>
+          <div class="block-sub">128 filters · 3×3 · same</div>
+          <div class="block-shape">W: [128,3,3,64]<br>72 KB · 128 scales</div>
+        </div>
+        <div class="arrow">
+          <div class="arrow-line"></div>
+          <div class="arrow-label">+ bias<br>→ ReLU</div>
+        </div>
+        <div class="block blk-pool" onclick="selectLayer('pool3')">
+          <div class="block-tag">LAYER 3b</div>
+          <div class="block-title">MaxPool</div>
+          <div class="block-sub">2×2 · stride=2</div>
+          <div class="block-shape">32×32<br>→ 16×16</div>
+        </div>
+      </div>
+      <div style="text-align:center;color:var(--textdim);font-family:'JetBrains Mono',monospace;font-size:0.7rem;margin:4px 0">output: [1, 16, 16, 128]</div>
+
+      <div class="v-arrow"></div>
+
+      <!-- CONV4 + POOL4 -->
+      <div class="flow-row">
+        <div class="block blk-conv" onclick="selectLayer('conv4')">
+          <div class="block-tag">LAYER 4</div>
+          <div class="block-title">Conv2D</div>
+          <div class="block-sub">128 filters · 3×3 · same</div>
+          <div class="block-shape">W: [128,3,3,128]<br>144 KB · 128 scales</div>
+        </div>
+        <div class="arrow">
+          <div class="arrow-line"></div>
+          <div class="arrow-label">+ bias<br>→ ReLU</div>
+        </div>
+        <div class="block blk-pool" onclick="selectLayer('pool4')">
+          <div class="block-tag">LAYER 4b</div>
+          <div class="block-title">MaxPool</div>
+          <div class="block-sub">2×2 · stride=2</div>
+          <div class="block-shape">16×16<br>→ 8×8</div>
+        </div>
+      </div>
+      <div style="text-align:center;color:var(--textdim);font-family:'JetBrains Mono',monospace;font-size:0.7rem;margin:4px 0">output: [1, 8, 8, 128]</div>
+
+      <div class="v-arrow"></div>
+
+      <!-- GAP -->
+      <div class="flow-row">
+        <div class="block blk-gap" onclick="selectLayer('gap')">
+          <div class="block-tag">LAYER 5</div>
+          <div class="block-title">Global Avg Pool</div>
+          <div class="block-sub">mean(H, W) per channel</div>
+          <div class="block-shape">[1,8,8,128]<br>→ [1,128]</div>
+        </div>
+      </div>
+
+      <div class="v-arrow"></div>
+
+      <!-- FC1 -->
+      <div class="flow-row">
+        <div class="block blk-fc" onclick="selectLayer('fc1')">
+          <div class="block-tag">LAYER 6</div>
+          <div class="block-title">Dense FC1</div>
+          <div class="block-sub">128 → 32 · ReLU</div>
+          <div class="block-shape">W: [32,128]<br>4 KB · 32 scales</div>
+        </div>
+      </div>
+
+      <div class="v-arrow"></div>
+
+      <!-- FC2 -->
+      <div class="flow-row">
+        <div class="block blk-fc" onclick="selectLayer('fc2')">
+          <div class="block-tag">LAYER 7</div>
+          <div class="block-title">Dense FC2</div>
+          <div class="block-sub">32 → 1 · (no activation)</div>
+          <div class="block-shape">W: [1,32]<br>32 B · 1 scale</div>
+        </div>
+      </div>
+
+      <div class="v-arrow"></div>
+
+      <!-- OUTPUT -->
+      <div class="flow-row">
+        <div class="block blk-out" onclick="selectLayer('output')">
+          <div class="block-tag">OUTPUT</div>
+          <div class="block-title">Logit int8</div>
+          <div class="block-sub">scale=0.06653, zp=−2</div>
+          <div class="block-shape">[1, 1]<br>int8 → sigmoid SW</div>
+        </div>
+      </div>
+
+    </div><!-- /flow -->
+
+    <div class="note-box" style="margin-top:32px">
+      <strong>📌 Nhấn vào bất kỳ khối nào</strong> để xem chi tiết layer, công thức RTL và tensor shapes.
+      Chuyển sang tab <strong>Chi tiết Layer</strong> để xem đầy đủ.
+    </div>
+
+  </div><!-- /tab-flow -->
+
+  <!-- ═══════════ TAB 2: DETAIL ═══════════ -->
+  <div id="tab-detail" class="panel">
+
+    <div class="layer-selector" id="layer-selector">
+      <div class="lbtn sel" onclick="showLayer('conv1', this)">Conv1</div>
+      <div class="lbtn" onclick="showLayer('conv2', this)">Conv2</div>
+      <div class="lbtn" onclick="showLayer('conv3', this)">Conv3</div>
+      <div class="lbtn" onclick="showLayer('conv4', this)">Conv4</div>
+      <div class="lbtn" onclick="showLayer('pool', this)">MaxPool</div>
+      <div class="lbtn" onclick="showLayer('gap', this)">GAP</div>
+      <div class="lbtn" onclick="showLayer('fc1', this)">FC1</div>
+      <div class="lbtn" onclick="showLayer('fc2', this)">FC2</div>
+      <div class="lbtn" onclick="showLayer('output', this)">Output Decode</div>
+    </div>
+
+    <!-- CONV layers -->
+    <div id="layer-conv1" class="layer-detail">
+      <div class="detail-grid">
+        <div class="detail-card highlight">
+          <h3>📐 Tensor Shapes</h3>
+          <div class="tensor-vis">
+            <div class="tensor-dim"><div class="tensor-box in">[1,128,128,1]</div><div class="tensor-label">Input X</div></div>
+            <div class="tensor-arrow">→</div>
+            <div class="tensor-dim"><div class="tensor-box out">[1,128,128,32]</div><div class="tensor-label">Pre-pool</div></div>
+            <div class="tensor-arrow">→</div>
+            <div class="tensor-dim"><div class="tensor-box out">[1,64,64,32]</div><div class="tensor-label">Sau MaxPool</div></div>
+          </div>
+          <div class="tensor-vis">
+            <div class="tensor-dim"><div class="tensor-box w">[32,3,3,1] = 288 B</div><div class="tensor-label">Weight W (int8)</div></div>
+            <div class="tensor-dim" style="margin-left:8px"><div class="tensor-box b">[32] = 128 B</div><div class="tensor-label">Bias b (int32)</div></div>
+          </div>
+          <div style="margin-top:12px">
+          <div class="info-row"><span class="info-key">MACs mỗi pixel</span><span class="info-val">3 × 3 × 1 = 9</span></div>
+          <div class="info-row"><span class="info-key">Total MACs</span><span class="info-val hi">128×128×32×9 = 4.7M</span></div>
+          <div class="info-row"><span class="info-key">Weight scale range</span><span class="info-val warn">0.009343 ÷ 0.04399 (4.7×)</span></div>
+          <div class="info-row"><span class="info-key">Padding</span><span class="info-val">SAME (zero-pad 1px mỗi cạnh)</span></div>
+          <div class="info-row"><span class="info-key">Activation</span><span class="info-val hi">ReLU → clip [0, 127]</span></div>
+          </div>
+        </div>
+        <div class="detail-card">
+          <h3>⚙️ Công thức RTL</h3>
+          <div class="formula-box">
+<span class="cmt">// Với mỗi output pixel (or, oc) và channel co:</span>
+<span class="kw">for</span> co = 0..31:
+  acc = 0  <span class="cmt">// int32</span>
+  <span class="kw">for</span> kh = 0..2:
+    <span class="kw">for</span> kw = 0..2:
+      x   = X[or+kh, oc+kw, 0]       <span class="cmt">// int8</span>
+      w   = W[co, kh, kw, 0]         <span class="cmt">// int8</span>
+      acc += (<span class="kw">int32</span>)(x - <span class="num">(-128)</span>) * (<span class="kw">int32</span>)w
+
+  acc += bias[co]                     <span class="cmt">// int32 bias</span>
+
+  <span class="cmt">// Requantize (per-channel):</span>
+  scaled  = acc × M_int32[co]        <span class="cmt">// int64</span>
+  shifted = scaled >>> shift[co]     <span class="cmt">// int32</span>
+  out     = clip(shifted + zp, <span class="num">-128</span>, <span class="num">127</span>)
+  relu    = (out &lt; 0) ? 0 : out      <span class="cmt">// ReLU</span></div>
+          <div class="note-box">
+            <strong>inp_zp = −128</strong> nên <code>x - (-128) = x + 128</code>, tức là input int8 được dịch về [0, 255] trước khi nhân với weight.
+          </div>
+        </div>
+        <div class="detail-card">
+          <h3>📏 Bit-width Requirements</h3>
+          <table class="bw-table">
+            <tr><th>Signal</th><th>Width</th><th>Type</th></tr>
+            <tr><td>input x</td><td>8 bit</td><td><span class="tag tag-i8">int8</span></td></tr>
+            <tr><td>x − inp_zp</td><td>9 bit</td><td><span class="tag tag-i32">int16</span> safe</td></tr>
+            <tr><td>weight w</td><td>8 bit</td><td><span class="tag tag-i8">int8</span></td></tr>
+            <tr><td>product</td><td>17 bit</td><td><span class="tag tag-i32">int32</span> safe</td></tr>
+            <tr><td>acc (9 MACs)</td><td>max 21 bit</td><td><span class="tag tag-i32">int32</span> ✓</td></tr>
+            <tr><td>+ bias</td><td>32 bit</td><td><span class="tag tag-i32">int32</span></td></tr>
+            <tr><td>acc × M_int32</td><td>64 bit</td><td><span class="tag tag-i64">int64 !</span></td></tr>
+            <tr><td>output relu</td><td>8 bit</td><td><span class="tag tag-i8">int8 [0,127]</span></td></tr>
+          </table>
+        </div>
+        <div class="detail-card">
+          <h3>🗃️ Ví dụ Requant — Channel 0</h3>
+          <div class="info-row"><span class="info-key">M_float</span><span class="info-val">0.001392550881</span></div>
+          <div class="info-row"><span class="info-key">M_int32</span><span class="info-val hi">765,562,943</span></div>
+          <div class="info-row"><span class="info-key">total_shift</span><span class="info-val">39</span></div>
+          <div class="formula-box" style="margin-top:12px">
+<span class="cmt">// Verilog:</span>
+<span class="kw">parameter</span> M  = <span class="num">32'd765562943</span>;
+<span class="kw">parameter</span> SH = <span class="num">6'd39</span>;
+
+<span class="kw">wire</span> [<span class="num">63</span>:0] scaled  = $signed(acc) * $signed(M);
+<span class="kw">wire</span> [<span class="num">31</span>:0] shifted = $signed(scaled) >>> SH;
+<span class="kw">wire</span> [ <span class="num">7</span>:0] clipped = (shifted &gt; <span class="num">127</span>)  ? <span class="num">8'sd127</span> :
+                      (shifted &lt; <span class="num">-128</span>) ? -<span class="num">8'sd128</span> : shifted;
+<span class="kw">wire</span> [ <span class="num">7</span>:0] relu    = clipped[<span class="num">7</span>] ? <span class="num">8'd0</span> : clipped;</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONV2 detail -->
+    <div id="layer-conv2" class="layer-detail" style="display:none">
+      <div class="detail-grid">
+        <div class="detail-card highlight">
+          <h3>📐 Tensor Shapes</h3>
+          <div class="tensor-vis">
+            <div class="tensor-dim"><div class="tensor-box in">[1,64,64,32]</div><div class="tensor-label">Input</div></div>
+            <div class="tensor-arrow">→</div>
+            <div class="tensor-dim"><div class="tensor-box out">[1,64,64,64]</div><div class="tensor-label">Pre-pool</div></div>
+            <div class="tensor-arrow">→</div>
+            <div class="tensor-dim"><div class="tensor-box out">[1,32,32,64]</div><div class="tensor-label">Sau MaxPool</div></div>
+          </div>
+          <div class="tensor-vis">
+            <div class="tensor-dim"><div class="tensor-box w">[64,3,3,32] = 18,432 B</div><div class="tensor-label">Weight (int8)</div></div>
+            <div class="tensor-dim" style="margin-left:8px"><div class="tensor-box b">[64] = 256 B</div><div class="tensor-label">Bias (int32)</div></div>
+          </div>
+          <div style="margin-top:12px">
+          <div class="info-row"><span class="info-key">MACs/pixel/channel</span><span class="info-val">3 × 3 × 32 = 288</span></div>
+          <div class="info-row"><span class="info-key">Total MACs</span><span class="info-val hi">64×64×64×288 ≈ 75.5M</span></div>
+          <div class="info-row"><span class="info-key">Weight scale spread</span><span class="info-val warn">8.1× — per-channel quan trọng</span></div>
+          <div class="info-row"><span class="info-key">acc max</span><span class="info-val">288 × 255 × 127 ≈ 9.3M → int32 OK</span></div>
+          </div>
+        </div>
+        <div class="detail-card">
+          <h3>⚙️ Công thức RTL</h3>
+          <div class="formula-box">
+<span class="cmt">// Input: [1,64,64,32], Weight: [64,3,3,32]</span>
+<span class="kw">for</span> co = 0..63:
+  acc = 0  <span class="cmt">// int32</span>
+  <span class="kw">for</span> kh = 0..2:
+    <span class="kw">for</span> kw = 0..2:
+      <span class="kw">for</span> ci = 0..31:
+        x   = X[or+kh, oc+kw, ci]  <span class="cmt">// int8</span>
+        w   = W[co, kh, kw, ci]    <span class="cmt">// int8</span>
+        acc += (x - x_zp) * w      <span class="cmt">// int32 acc</span>
+
+  <span class="cmt">// x_zp = scale của input activation layer trước</span>
+  <span class="cmt">// (không phải -128 nữa — đây là intermediate tensor)</span>
+  acc += bias[co]
+  out[co] = requantize(acc, M[co], shift[co], zp_out)</div>
+          <div class="note-box">
+            <strong>Lưu ý:</strong> Từ Conv2 trở đi, <code>x_zp</code> là zero point của activation tensor trước (output của Conv1 sau requant), không còn là −128. Lấy từ <code>layer_trace.py</code>.
+          </div>
+        </div>
+        <div class="detail-card">
+          <h3>📏 Overflow Analysis</h3>
+          <table class="bw-table">
+            <tr><th>Signal</th><th>Max value</th><th>Bits cần</th></tr>
+            <tr><td>x − zp</td><td>±255</td><td>9 bit</td></tr>
+            <tr><td>weight</td><td>±127</td><td>8 bit</td></tr>
+            <tr><td>1 product</td><td>±32,385</td><td>16 bit</td></tr>
+            <tr><td>acc (288 MACs)</td><td>±9.3M</td><td>24 bit</td></tr>
+            <tr><td>+ bias (int32)</td><td>±2.1B</td><td><span class="tag tag-i32">32 bit ✓</span></td></tr>
+            <tr><td>acc × M_int32</td><td>~9.3M × 1B</td><td><span class="tag tag-i64">64 bit !</span></td></tr>
+          </table>
+        </div>
+        <div class="detail-card">
+          <h3>🗃️ Requant Ch 0</h3>
+          <div class="info-row"><span class="info-key">M_float</span><span class="info-val">0.000054377098</span></div>
+          <div class="info-row"><span class="info-key">M_int32</span><span class="info-val hi">956,612,025</span></div>
+          <div class="info-row"><span class="info-key">total_shift</span><span class="info-val">44</span></div>
+          <div class="formula-box" style="margin-top:12px">
+<span class="kw">parameter</span> M  = <span class="num">32'd956612025</span>;
+<span class="kw">parameter</span> SH = <span class="num">6'd44</span>;
+<span class="cmt">// shift lớn hơn Conv1 (44 vs 39)</span>
+<span class="cmt">// vì M_float nhỏ hơn nhiều</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONV3 detail -->
+    <div id="layer-conv3" class="layer-detail" style="display:none">
+      <div class="detail-grid">
+        <div class="detail-card highlight">
+          <h3>📐 Tensor Shapes</h3>
+          <div class="tensor-vis">
+            <div class="tensor-dim"><div class="tensor-box in">[1,32,32,64]</div><div class="tensor-label">Input</div></div>
+            <div class="tensor-arrow">→</div>
+            <div class="tensor-dim"><div class="tensor-box out">[1,32,32,128]</div><div class="tensor-label">Pre-pool</div></div>
+            <div class="tensor-arrow">→</div>
+            <div class="tensor-dim"><div class="tensor-box out">[1,16,16,128]</div><div class="tensor-label">Sau MaxPool</div></div>
+          </div>
+          <div class="tensor-vis">
+            <div class="tensor-dim"><div class="tensor-box w">[128,3,3,64] = 73,728 B</div><div class="tensor-label">Weight (int8)</div></div>
+          </div>
+          <div style="margin-top:12px">
+          <div class="info-row"><span class="info-key">MACs/pixel/ch</span><span class="info-val">3 × 3 × 64 = 576</span></div>
+          <div class="info-row"><span class="info-key">Total MACs</span><span class="info-val hi">32×32×128×576 ≈ 754M</span></div>
+          <div class="info-row"><span class="info-key">acc max (576 MACs)</span><span class="info-val">576 × 255 × 127 ≈ 18.6M → int32 OK</span></div>
+          </div>
+        </div>
+        <div class="detail-card">
+          <h3>⚙️ Cấu trúc tính toán</h3>
+          <div class="formula-box">
+<span class="cmt">// Tương tự Conv2, nhưng Cin=64:</span>
+<span class="kw">for</span> co = 0..127:
+  acc = 0
+  <span class="kw">for</span> kh,kw = 0..2:
+    <span class="kw">for</span> ci = 0..63:
+      acc += (X[or+kh,oc+kw,ci] - x_zp) * W[co,kh,kw,ci]
+  acc += bias[co]
+  out = requantize(acc, M[co], shift[co], zp)
+  out = relu(out)  <span class="cmt">// clip [0,127]</span>
+
+<span class="cmt">// ⚠️ Conv3 có 128 bộ (M_int32, shift)</span>
+<span class="cmt">// → ROM cần 128 × (32+6) = 608 bytes cho layer này</span></div>
+        </div>
+        <div class="detail-card">
+          <h3>🏋️ Layer nặng thứ 2</h3>
+          <div class="info-row"><span class="info-key">Weight size</span><span class="info-val warn">72 KB</span></div>
+          <div class="info-row"><span class="info-key">Bias size</span><span class="info-val">512 B (128 × int32)</span></div>
+          <div class="info-row"><span class="info-key">Requant ROM</span><span class="info-val">128 × 2 entries</span></div>
+          <div class="info-row"><span class="info-key">Feature map buffer</span><span class="info-val">32×32×128 = 131,072 B</span></div>
+        </div>
+        <div class="detail-card">
+          <h3>🗃️ Requant Ch 0</h3>
+          <div class="info-row"><span class="info-key">M_float</span><span class="info-val">0.000036489039</span></div>
+          <div class="info-row"><span class="info-key">M_int32</span><span class="info-val hi">641,921,960</span></div>
+          <div class="info-row"><span class="info-key">total_shift</span><span class="info-val">44</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONV4 detail -->
+    <div id="layer-conv4" class="layer-detail" style="display:none">
+      <div class="detail-grid">
+        <div class="detail-card highlight">
+          <h3>📐 Tensor Shapes</h3>
+          <div class="tensor-vis">
+            <div class="tensor-dim"><div class="tensor-box in">[1,16,16,128]</div><div class="tensor-label">Input</div></div>
+            <div class="tensor-arrow">→</div>
+            <div class="tensor-dim"><div class="tensor-box out">[1,16,16,128]</div><div class="tensor-label">Pre-pool</div></div>
+            <div class="tensor-arrow">→</div>
+            <div class="tensor-dim"><div class="tensor-box out">[1,8,8,128]</div><div class="tensor-label">Sau MaxPool</div></div>
+          </div>
+          <div class="tensor-vis">
+            <div class="tensor-dim"><div class="tensor-box w">[128,3,3,128] = 147,456 B</div><div class="tensor-label">Weight (int8) — lớn nhất</div></div>
+          </div>
+          <div style="margin-top:12px">
+          <div class="info-row"><span class="info-key">MACs/pixel/ch</span><span class="info-val">3 × 3 × 128 = 1,152</span></div>
+          <div class="info-row"><span class="info-key">Total MACs</span><span class="info-val hi">16×16×128×1152 ≈ 378M</span></div>
+          <div class="info-row"><span class="info-key">Weight size</span><span class="info-val warn">144 KB — lớn nhất model</span></div>
+          </div>
+        </div>
+        <div class="detail-card">
+          <h3>⚙️ Công thức RTL</h3>
+          <div class="formula-box">
+<span class="cmt">// Conv4: Cin=Cout=128, nặng nhất</span>
+<span class="kw">for</span> co = 0..127:
+  acc = 0  <span class="cmt">// int32</span>
+  <span class="kw">for</span> kh,kw = 0..2:
+    <span class="kw">for</span> ci = 0..127:
+      acc += (X[or+kh,oc+kw,ci]-x_zp) * W[co,kh,kw,ci]
+  acc += bias[co]
+  out = clip(requantize(acc,M[co],shift[co],zp), <span class="num">0</span>,<span class="num">127</span>)
+
+<span class="cmt">// acc max = 1152 × 255 × 127 = 37.2M</span>
+<span class="cmt">// → vẫn fit int32 (max ~2.1B)</span>
+<span class="cmt">// nhưng cần verify không overflow bias step</span></div>
+        </div>
+        <div class="detail-card">
+          <h3>📏 Overflow check</h3>
+          <table class="bw-table">
+            <tr><th>Bước</th><th>Max value</th><th>Kết luận</th></tr>
+            <tr><td>1 product</td><td>255 × 127 = 32,385</td><td><span class="tag tag-i8">16 bit</span></td></tr>
+            <tr><td>1,152 MACs</td><td>1,152 × 32,385 ≈ 37M</td><td><span class="tag tag-i32">26 bit</span></td></tr>
+            <tr><td>+ bias (int32)</td><td>~2.1B max</td><td><span class="tag tag-i32">int32 ✓</span></td></tr>
+            <tr><td>× M_int32</td><td>37M × 1B ≈ 3.7×10¹⁶</td><td><span class="tag tag-i64">int64 !</span></td></tr>
+          </table>
+        </div>
+        <div class="detail-card">
+          <h3>🗃️ Requant params</h3>
+          <div class="info-row"><span class="info-key">M_float ch0</span><span class="info-val">0.000048673085</span></div>
+          <div class="info-row"><span class="info-key">M_int32 ch0</span><span class="info-val hi">856,265,971</span></div>
+          <div class="info-row"><span class="info-key">total_shift</span><span class="info-val">44</span></div>
+          <div class="info-row"><span class="info-key">Số entries ROM</span><span class="info-val warn">128 bộ (M_int32, shift)</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- POOL detail -->
+    <div id="layer-pool" class="layer-detail" style="display:none">
+      <div class="detail-grid">
+        <div class="detail-card highlight">
+          <h3>📐 MaxPool 2×2 stride=2</h3>
+          <div class="info-row"><span class="info-key">Kernel</span><span class="info-val">2×2</span></div>
+          <div class="info-row"><span class="info-key">Stride</span><span class="info-val">2 (không overlap)</span></div>
+          <div class="info-row"><span class="info-key">Áp dụng sau</span><span class="info-val">Conv1, Conv2, Conv3, Conv4</span></div>
+          <div class="info-row"><span class="info-key">Mục đích</span><span class="info-val">Giảm spatial 1/2 mỗi lần</span></div>
+          <div class="info-row"><span class="info-key">Parameters</span><span class="info-val hi">Không có weight/bias</span></div>
+          <div class="info-row"><span class="info-key">Quantization</span><span class="info-val">Scale/ZP không đổi</span></div>
+        </div>
+        <div class="detail-card">
+          <h3>⚙️ Công thức RTL</h3>
+          <div class="formula-box">
+<span class="cmt">// MaxPool — không cần requantize</span>
+<span class="cmt">// Chỉ so sánh và lấy max trong 2×2 window</span>
+<span class="kw">for</span> ch = 0..C-1:
+  <span class="kw">for</span> or = 0..H/2-1:
+    <span class="kw">for</span> oc = 0..W/2-1:
+      m = X[2*or, 2*oc, ch]  <span class="cmt">// int8</span>
+      m = max(m, X[2*or,   2*oc+1, ch])
+      m = max(m, X[2*or+1, 2*oc,   ch])
+      m = max(m, X[2*or+1, 2*oc+1, ch])
+      Y[or, oc, ch] = m       <span class="cmt">// int8, scale unchanged</span>
+
+<span class="cmt">// So sánh int8 (signed): dùng $signed() trong Verilog</span>
+<span class="cmt">// max = (a > b) ? a : b   với a,b là signed int8</span></div>
+          <div class="note-box"><strong>Quan trọng:</strong> Vì MaxPool chỉ so sánh, không nhân/cộng, nên scale và zero point của output <strong>giống hệt input</strong>. Không cần requantize thêm.</div>
+        </div>
+        <div class="detail-card">
+          <h3>📊 Spatial reduction</h3>
+          <table class="bw-table">
+            <tr><th>Sau layer</th><th>Trước pool</th><th>Sau pool</th></tr>
+            <tr><td>Conv1</td><td>[1,128,128,32]</td><td>[1,64,64,32]</td></tr>
+            <tr><td>Conv2</td><td>[1,64,64,64]</td><td>[1,32,32,64]</td></tr>
+            <tr><td>Conv3</td><td>[1,32,32,128]</td><td>[1,16,16,128]</td></tr>
+            <tr><td>Conv4</td><td>[1,16,16,128]</td><td>[1,8,8,128]</td></tr>
+          </table>
+        </div>
+        <div class="detail-card">
+          <h3>💾 Buffer cần thiết</h3>
+          <div class="info-row"><span class="info-key">Input buffer (worst)</span><span class="info-val warn">128×128×32 = 512 KB</span></div>
+          <div class="info-row"><span class="info-key">Thực tế (ping-pong)</span><span class="info-val hi">Chỉ cần 2 dòng × W × C</span></div>
+          <div class="info-row"><span class="info-key">Hardware</span><span class="info-val">Line buffer 2 dòng đủ</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GAP detail -->
+    <div id="layer-gap" class="layer-detail" style="display:none">
+      <div class="detail-grid">
+        <div class="detail-card highlight">
+          <h3>📐 Global Average Pooling</h3>
+          <div class="tensor-vis">
+            <div class="tensor-dim"><div class="tensor-box in">[1,8,8,128]</div><div class="tensor-label">Input</div></div>
+            <div class="tensor-arrow">→</div>
+            <div class="tensor-dim"><div class="tensor-box out">[1,128]</div><div class="tensor-label">Output (flatten)</div></div>
+          </div>
+          <div style="margin-top:12px">
+          <div class="info-row"><span class="info-key">Mục đích</span><span class="info-val">Tổng hợp spatial → vector</span></div>
+          <div class="info-row"><span class="info-key">Phép tính</span><span class="info-val">mean() mỗi 8×8 = 64 samples</span></div>
+          <div class="info-row"><span class="info-key">Scale output</span><span class="info-val hi">0.016025 (index 17)</span></div>
+          <div class="info-row"><span class="info-key">Weight</span><span class="info-val">Không có</span></div>
+          </div>
+        </div>
+        <div class="detail-card">
+          <h3>⚙️ Công thức RTL</h3>
+          <div class="formula-box">
+<span class="cmt">// GAP: trung bình 8×8=64 pixels mỗi channel</span>
+<span class="kw">for</span> ch = 0..127:
+  sum = 0  <span class="cmt">// int32 (cần: 64 × 127 = 8,128 → 14 bit)</span>
+  <span class="kw">for</span> h = 0..7:
+    <span class="kw">for</span> w = 0..7:
+      sum += (<span class="kw">int32</span>)(X[h,w,ch] - x_zp)
+
+  <span class="cmt">// Chia cho 64 = right shift 6:</span>
+  <span class="cmt">// Hoặc dùng requantize với M_gap, shift_gap</span>
+  avg = sum >> <span class="num">6</span>              <span class="cmt">// ≈ sum/64</span>
+  out[ch] = clip(avg + zp_gap, <span class="num">-128</span>, <span class="num">127</span>)
+
+<span class="cmt">// M_int32 GAP = 1,038,677,431  shift=40</span>
+<span class="cmt">// (từ REQUANT_PARAMS.txt, layer quant_gap/Mean)</span></div>
+          <div class="note-box"><strong>Tối ưu hardware:</strong> Không cần multiplier cho GAP. Chỉ cần adder tree 64 đầu vào + right shift 6 bit. Tiết kiệm diện tích đáng kể.</div>
+        </div>
+        <div class="detail-card">
+          <h3>📏 Bit width</h3>
+          <table class="bw-table">
+            <tr><th>Signal</th><th>Max</th><th>Width</th></tr>
+            <tr><td>1 sample</td><td>127 − zp</td><td>8 bit</td></tr>
+            <tr><td>sum (64 samples)</td><td>64 × 255 = 16,320</td><td>14 bit</td></tr>
+            <tr><td>sum (int32)</td><td>safe</td><td><span class="tag tag-i32">int32</span></td></tr>
+            <tr><td>output</td><td>clip [-128,127]</td><td><span class="tag tag-i8">int8</span></td></tr>
+          </table>
+        </div>
+        <div class="detail-card">
+          <h3>🔄 Kết nối FC layer</h3>
+          <div class="formula-box">
+<span class="cmt">// Output GAP: [1,128] int8</span>
+<span class="cmt">// Đây là input vector cho FC1</span>
+<span class="cmt">// Có thể lưu trực tiếp vào FC input buffer</span>
+<span class="cmt">// không cần reshape thêm</span>
+
+<span class="cmt">// scale của GAP output = 0.016025</span>
+<span class="cmt">// zero_point phải lấy từ layer_trace.py</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FC1 detail -->
+    <div id="layer-fc1" class="layer-detail" style="display:none">
+      <div class="detail-grid">
+        <div class="detail-card highlight">
+          <h3>📐 FC1 — Dense 128→32 + ReLU</h3>
+          <div class="tensor-vis">
+            <div class="tensor-dim"><div class="tensor-box in">[1,128]</div><div class="tensor-label">Input vector</div></div>
+            <div class="tensor-arrow">→</div>
+            <div class="tensor-dim"><div class="tensor-box out">[1,32]</div><div class="tensor-label">Output (sau ReLU)</div></div>
+          </div>
+          <div class="tensor-vis">
+            <div class="tensor-dim"><div class="tensor-box w">[32,128] = 4,096 B</div><div class="tensor-label">Weight matrix (int8)</div></div>
+            <div class="tensor-dim" style="margin-left:8px"><div class="tensor-box b">[32] = 128 B</div><div class="tensor-label">Bias (int32)</div></div>
+          </div>
+          <div style="margin-top:12px">
+          <div class="info-row"><span class="info-key">MACs total</span><span class="info-val hi">128 × 32 = 4,096</span></div>
+          <div class="info-row"><span class="info-key">acc max</span><span class="info-val">128 × 255 × 127 = 4.1M → int32 OK</span></div>
+          <div class="info-row"><span class="info-key">Activation</span><span class="info-val hi">ReLU → clip [0, 127]</span></div>
+          </div>
+        </div>
+        <div class="detail-card">
+          <h3>⚙️ Công thức RTL (MatMul)</h3>
+          <div class="formula-box">
+<span class="cmt">// FC là MatMul: Y = W × X + b</span>
+<span class="kw">for</span> co = 0..31:
+  acc = 0  <span class="cmt">// int32</span>
+  <span class="kw">for</span> ci = 0..127:
+    x   = gap_out[ci]               <span class="cmt">// int8</span>
+    w   = W[co, ci]                 <span class="cmt">// int8</span>
+    acc += (x - x_zp) * w          <span class="cmt">// int32</span>
+  acc += bias[co]
+  out[co] = requantize(acc, M[co], shift[co], zp)
+  out[co] = relu(out[co])           <span class="cmt">// clip [0,127]</span>
+
+<span class="cmt">// Không có spatial loop → đơn giản hơn Conv</span>
+<span class="cmt">// Có thể dùng systolic array 1D hoặc SIMD</span></div>
+        </div>
+        <div class="detail-card">
+          <h3>🗃️ Requant Ch 0</h3>
+          <div class="info-row"><span class="info-key">M_float</span><span class="info-val">0.000179805617</span></div>
+          <div class="info-row"><span class="info-key">M_int32</span><span class="info-val hi">790,793,467</span></div>
+          <div class="info-row"><span class="info-key">total_shift</span><span class="info-val">42</span></div>
+          <div class="formula-box" style="margin-top:8px">
+<span class="kw">parameter</span> M  = <span class="num">32'd790793467</span>;
+<span class="kw">parameter</span> SH = <span class="num">6'd42</span>;
+<span class="cmt">// 32 bộ (M,SH) cho 32 output neurons</span></div>
+        </div>
+        <div class="detail-card">
+          <h3>💡 Hardware hint</h3>
+          <div class="note-box"><strong>FC1 chỉ cần 4,096 MACs</strong> — rất nhỏ so với Conv layers. Có thể dùng lại PE array của Conv với vectorized 128-element dot product, hoặc tính tuần tự trong ~4K cycles.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FC2 detail -->
+    <div id="layer-fc2" class="layer-detail" style="display:none">
+      <div class="detail-grid">
+        <div class="detail-card highlight">
+          <h3>📐 FC2 — Dense 32→1 (Output)</h3>
+          <div class="tensor-vis">
+            <div class="tensor-dim"><div class="tensor-box in">[1,32]</div><div class="tensor-label">Input</div></div>
+            <div class="tensor-arrow">→</div>
+            <div class="tensor-dim"><div class="tensor-box out">[1,1]</div><div class="tensor-label">Logit (int8)</div></div>
+          </div>
+          <div class="tensor-vis">
+            <div class="tensor-dim"><div class="tensor-box w">[1,32] = 32 B</div><div class="tensor-label">Weight (int8)</div></div>
+            <div class="tensor-dim" style="margin-left:8px"><div class="tensor-box b">[1] = 4 B</div><div class="tensor-label">Bias (int32)</div></div>
+          </div>
+          <div style="margin-top:12px">
+          <div class="info-row"><span class="info-key">MACs</span><span class="info-val hi">32 MACs — nhỏ nhất model</span></div>
+          <div class="info-row"><span class="info-key">Activation</span><span class="info-val warn">KHÔNG có ReLU</span></div>
+          <div class="info-row"><span class="info-key">Output scale</span><span class="info-val">0.066526</span></div>
+          <div class="info-row"><span class="info-key">Output ZP</span><span class="info-val">−2</span></div>
+          </div>
+        </div>
+        <div class="detail-card">
+          <h3>⚙️ Công thức RTL</h3>
+          <div class="formula-box">
+<span class="cmt">// FC2: chỉ 1 output neuron</span>
+acc = 0  <span class="cmt">// int32</span>
+<span class="kw">for</span> ci = 0..31:
+  x   = fc1_out[ci]           <span class="cmt">// int8 [0,127] (sau ReLU)</span>
+  w   = W[0, ci]              <span class="cmt">// int8</span>
+  acc += (x - x_zp) * w      <span class="cmt">// int32</span>
+acc += bias[0]
+
+<span class="cmt">// Requantize về model output:</span>
+scaled  = acc × M_int32       <span class="cmt">// int64</span>
+shifted = scaled >>> shift    <span class="cmt">// int32</span>
+out_i8  = clip(shifted + <span class="num">(-2)</span>, <span class="num">-128</span>, <span class="num">127</span>)
+
+<span class="cmt">// KHÔNG clip về [0,127] — không có ReLU!</span>
+<span class="cmt">// M = 716,407,362 ; shift = 41</span></div>
+        </div>
+        <div class="detail-card">
+          <h3>🔓 Decode output (SW)</h3>
+          <div class="formula-box">
+<span class="cmt">// Bước 1: dequantize int8 → float logit</span>
+out_zp    = <span class="num">-2</span>
+out_scale = <span class="num">0.066526</span>
+logit = (out_i8 - out_zp) × out_scale
+      = (out_i8 + <span class="num">2</span>) × <span class="num">0.066526</span>
+
+<span class="cmt">// Bước 2: sigmoid (chỉ cần trong SW/CPU)</span>
+prob = <span class="num">1.0</span> / (<span class="num">1.0</span> + exp(-logit))
+
+<span class="cmt">// Bước 3: so sánh</span>
+<span class="cmt">// prob &lt; 0.01 → FATIGUE  (logit &lt; -4.6)</span>
+<span class="cmt">// prob ≥ 0.01 → ACTIVE</span></div>
+        </div>
+        <div class="detail-card">
+          <h3>⚡ ASIC Shortcut — không cần FPU</h3>
+          <div class="note-box" style="margin-bottom:10px"><strong>Không cần tính sigmoid trong hardware!</strong> Chỉ cần so sánh out_i8 với threshold:</div>
+          <div class="formula-box">
+<span class="cmt">// prob &lt; 0.01 ↔ logit &lt; −4.60</span>
+<span class="cmt">// logit = (out_i8 + 2) × 0.066526</span>
+<span class="cmt">// -4.60 = (out_i8 + 2) × 0.066526</span>
+<span class="cmt">// out_i8 = -4.60/0.066526 - 2 ≈ -71</span>
+
+<span class="cmt">// → Hardware chỉ cần:</span>
+<span class="kw">assign</span> is_fatigue = (out_i8 &lt; -<span class="num">8'sd71</span>);
+<span class="cmt">// 1 comparator, 0 FPU, 0 multiplier!</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- OUTPUT decode -->
+    <div id="layer-output" class="layer-detail" style="display:none">
+      <div class="detail-grid">
+        <div class="detail-card highlight">
+          <h3>📊 Full decode pipeline</h3>
+          <div class="formula-box">
+<span class="cmt">// int8 raw output → classification</span>
+
+<span class="cmt">Step 1: int8 → logit (float)</span>
+logit = (out_i8 − (−2)) × 0.066526
+
+<span class="cmt">Step 2: sigmoid → prob [0,1]</span>
+prob  = 1 / (1 + exp(−logit))
+
+<span class="cmt">Step 3: phân loại</span>
+<span class="kw">if</span> prob &lt; 0.01:  FATIGUE  😴  <span class="cmt">(mắt nhắm)</span>
+<span class="kw">else</span>:            ACTIVE   😊  <span class="cmt">(mắt mở)</span>
+
+<span class="cmt">────────────────────────────────</span>
+<span class="cmt">Ví dụ — mắt nhắm:</span>
+out_i8 = −120
+logit  = (−120 + 2) × 0.066526 = −7.85
+prob   = 1/(1+e^7.85) ≈ 0.00039  → FATIGUE
+
+<span class="cmt">Ví dụ — mắt mở:</span>
+out_i8 = −40
+logit  = (−40 + 2) × 0.066526 = −2.53
+prob   = 1/(1+e^2.53) ≈ 0.074   → ACTIVE</div>
+        </div>
+        <div class="detail-card">
+          <h3>⚡ ASIC integer comparison</h3>
+          <div class="formula-box">
+<span class="cmt">// Không cần FPU, không cần sigmoid</span>
+<span class="cmt">// Threshold: out_i8 &lt; -71 → FATIGUE</span>
+
+<span class="vk">module</span> drowsiness_classifier (
+  input  <span class="kw">signed</span> [7:0] out_i8,
+  output             is_fatigue,
+  output             is_active
+);
+  <span class="vk">localparam</span> THRESHOLD = -<span class="num">8'sd71</span>;
+  <span class="kw">assign</span> is_fatigue = (out_i8 &lt; THRESHOLD);
+  <span class="kw">assign</span> is_active  = ~is_fatigue;
+<span class="vk">endmodule</span></div>
+          <div class="note-box"><strong>1 signed comparator = toàn bộ phân loại.</strong> Đây là lý do INT8 quantization lý tưởng cho ASIC — loại bỏ hoàn toàn FPU.</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /tab-detail -->
+
+  <!-- ═══════════ TAB 3: DATAPATH ═══════════ -->
+  <div id="tab-datapath" class="panel">
+    <div class="detail-grid">
+      <div class="detail-card highlight" style="grid-column: 1 / -1">
+        <h3>🔄 Datapath hoàn chỉnh qua 1 Conv Layer</h3>
+        <div class="formula-box" style="font-size:0.73rem">
+<span class="cmt">┌─────────────────────────────────────────────────────────────────────────┐</span>
+<span class="cmt">│                    CONV PE — 1 output channel 'co'                      │</span>
+<span class="cmt">│                                                                         │</span>
+<span class="cmt">│  Input SRAM ──→ [ − inp_zp ] ──→ ┐                                    │</span>
+<span class="cmt">│   int8 X[h,w,ci]   int16 x_adj    ├──→ MUL (int8 × int16 → int32)      │</span>
+<span class="cmt">│                                   │         │                           │</span>
+<span class="cmt">│  Weight ROM ──────────────────────┘         ↓                           │</span>
+<span class="cmt">│   int8 W[co,h,w,ci]                  Σ Accumulate (int32)               │</span>
+<span class="cmt">│                                         × K×K×Cin steps                 │</span>
+<span class="cmt">│                                              │                           │</span>
+<span class="cmt">│  Bias ROM ───────────────────────────────→ + int32                      │</span>
+<span class="cmt">│   int32 b[co]                               │                           │</span>
+<span class="cmt">│                                              ↓                           │</span>
+<span class="cmt">│  M_int32 ROM ────────────────────────────→ × (int32 × int32 → int64)   │</span>
+<span class="cmt">│   M_int32[co]                               │                           │</span>
+<span class="cmt">│                                              ↓                           │</span>
+<span class="cmt">│  Shift ROM ──────────────────────────────→ >>> arithmetic shift         │</span>
+<span class="cmt">│   shift[co]                          int64 → int32                      │</span>
+<span class="cmt">│                                              │                           │</span>
+<span class="cmt">│  out_zp ─────────────────────────────────→ + (int32)                   │</span>
+<span class="cmt">│                                              │                           │</span>
+<span class="cmt">│                                       clip(−128, 127) → int8            │</span>
+<span class="cmt">│                                              │                           │</span>
+<span class="cmt">│                                       ReLU (nếu có) → [0,127]           │</span>
+<span class="cmt">│                                              │                           │</span>
+<span class="cmt">│                                     Output SRAM int8 Y[or,oc,co]       │</span>
+<span class="cmt">└─────────────────────────────────────────────────────────────────────────┘</span></div>
+      </div>
+
+      <div class="detail-card">
+        <h3>📋 Các bước chi tiết</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-num" style="background:rgba(0,212,255,0.2);color:var(--accent1)">1</div>
+            <div class="step-text">Load <code>X[h,w,ci]</code> từ Input SRAM (int8). Trừ <code>inp_zp</code> → <code>x_adj</code> (int16 safe vì zp có thể = ±128).</div>
+          </div>
+          <div class="step">
+            <div class="step-num" style="background:rgba(124,77,255,0.2);color:var(--accent2)">2</div>
+            <div class="step-text">Load <code>W[co,kh,kw,ci]</code> từ Weight ROM (int8). Weight zero_point = 0 nên không cần trừ.</div>
+          </div>
+          <div class="step">
+            <div class="step-num" style="background:rgba(255,107,53,0.2);color:var(--accent4)">3</div>
+            <div class="step-text">Nhân: <code>product = x_adj × w</code> (int32). Cộng dồn vào <code>acc</code> (int32) cho tất cả K×K×Cin bước.</div>
+          </div>
+          <div class="step">
+            <div class="step-num" style="background:rgba(0,255,157,0.2);color:var(--accent3)">4</div>
+            <div class="step-text">Cộng bias: <code>acc += bias[co]</code> (int32 + int32 → int32). Bias đã fold BN vào.</div>
+          </div>
+          <div class="step">
+            <div class="step-num" style="background:rgba(255,214,10,0.2);color:var(--accent5)">5</div>
+            <div class="step-text">Requantize: <code>scaled = (int64)acc × M_int32[co]</code> — bắt buộc dùng <strong>int64</strong>. Sau đó arithmetic right shift <code>total_shift</code>.</div>
+          </div>
+          <div class="step">
+            <div class="step-num" style="background:rgba(0,212,255,0.2);color:var(--accent1)">6</div>
+            <div class="step-text">Clip: <code>out = clip(shifted + out_zp, -128, 127)</code>. Nếu có ReLU: <code>out = (out &lt; 0) ? 0 : out</code>.</div>
+          </div>
+          <div class="step">
+            <div class="step-num" style="background:rgba(124,77,255,0.2);color:var(--accent2)">7</div>
+            <div class="step-text">Ghi <code>Y[or,oc,co]</code> vào Output SRAM (int8). Output này là input cho layer tiếp theo.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-card">
+        <h3>⚠️ Critical Implementation Notes</h3>
+        <div class="note-box" style="margin-bottom:10px"><strong>int64 là bắt buộc</strong> ở bước nhân M_int32. Nếu dùng int32, sẽ overflow và kết quả sai hoàn toàn.</div>
+        <div class="note-box" style="margin-bottom:10px;border-left-color:var(--accent3)"><strong>inp_zp khác nhau</strong> từng layer — không phải luôn luôn là −128. Layer đầu tiên dùng −128, các layer sau dùng zero point của intermediate activation (lấy từ layer_trace.py).</div>
+        <div class="note-box" style="margin-bottom:10px;border-left-color:var(--accent2)"><strong>Arithmetic right shift</strong> (>>>) không phải logical shift. Verilog: dùng <code>$signed(x) >>> n</code>.</div>
+        <div class="note-box" style="border-left-color:var(--accent4)"><strong>MaxPool không requantize</strong> — scale/zp giữ nguyên từ Conv output.</div>
+      </div>
+
+      <div class="detail-card">
+        <h3>📊 Memory Access Pattern</h3>
+        <table class="bw-table">
+          <tr><th>Layer</th><th>W reads/output</th><th>X reads/output</th></tr>
+          <tr><td>Conv1</td><td>9 × 32 = 288</td><td>9 × 128 = 1,152</td></tr>
+          <tr><td>Conv2</td><td>288 × 64 = 18K</td><td>288 × 64 = 18K</td></tr>
+          <tr><td>Conv3</td><td>576 × 128 = 74K</td><td>576 × 128 = 74K</td></tr>
+          <tr><td>Conv4</td><td>1,152 × 128 = 147K</td><td>1,152 × 128 = 147K</td></tr>
+          <tr><td>GAP</td><td>0</td><td>64 × 128 = 8K</td></tr>
+          <tr><td>FC1+FC2</td><td>4,128</td><td>4,128</td></tr>
+        </table>
+        <div class="note-box" style="margin-top:10px"><strong>Bottleneck</strong> là memory bandwidth Conv3/Conv4. Cân nhắc double-buffering hoặc weight reuse (output stationary) để giảm SRAM access.</div>
+      </div>
+    </div>
+  </div><!-- /tab-datapath -->
+
+  <!-- ═══════════ TAB 4: RTL ═══════════ -->
+  <div id="tab-rtl" class="panel">
+
+    <div class="verilog-section">
+      <h3>Module 1 — MAC + Accumulator</h3>
+      <div class="vcode"><span class="vc">// MAC unit: 1 multiply-accumulate step</span>
+<span class="vk">module</span> <span class="vf">mac_unit</span> (
+  <span class="vk">input</span>  <span class="vk">wire</span>         clk, rst, en,
+  <span class="vk">input</span>  <span class="vk">wire</span> signed [7:0]  weight,       <span class="vc">// int8 weight</span>
+  <span class="vk">input</span>  <span class="vk">wire</span> signed [7:0]  input_val,    <span class="vc">// int8 input</span>
+  <span class="vk">input</span>  <span class="vk">wire</span> signed [7:0]  inp_zp,       <span class="vc">// zero point (e.g. -128)</span>
+  <span class="vk">output</span> <span class="vk">reg</span>  signed [31:0] acc           <span class="vc">// int32 accumulator</span>
+);
+  <span class="vk">wire</span> signed [8:0]  x_adj    = input_val - inp_zp;  <span class="vc">// 9-bit</span>
+  <span class="vk">wire</span> signed [16:0] product  = weight * x_adj;       <span class="vc">// 17-bit</span>
+
+  <span class="vk">always</span> @(<span class="vk">posedge</span> clk) <span class="vk">begin</span>
+    <span class="vk">if</span> (rst) acc &lt;= <span class="vn">32'sd0</span>;
+    <span class="vk">else if</span> (en) acc &lt;= acc + {{15{product[16]}}, product}; <span class="vc">// sign-extend</span>
+  <span class="vk">end</span>
+<span class="vk">endmodule</span></div>
+    </div>
+
+    <div class="verilog-section">
+      <h3>Module 2 — Requantizer (per-channel)</h3>
+      <div class="vcode"><span class="vc">// Requantizer: acc(int32) → out(int8)</span>
+<span class="vk">module</span> <span class="vf">requantizer</span> #(
+  <span class="vk">parameter</span> [31:0] M_INT32     = <span class="vn">32'd765562943</span>,  <span class="vc">// từ REQUANT_PARAMS</span>
+  <span class="vk">parameter</span> [5:0]  TOTAL_SHIFT = <span class="vn">6'd39</span>,
+  <span class="vk">parameter</span> signed [7:0] OUT_ZP = -<span class="vn">8'sd2</span>
+) (
+  <span class="vk">input</span>  <span class="vk">wire</span> signed [31:0] acc_biased,   <span class="vc">// sau cộng bias</span>
+  <span class="vk">input</span>  <span class="vk">wire</span>               use_relu,     <span class="vc">// 1=Conv, 0=FC2/output</span>
+  <span class="vk">output</span> <span class="vk">wire</span> signed [7:0]  out_q         <span class="vc">// int8 result</span>
+);
+  <span class="vk">wire</span> signed [63:0] scaled  = $signed(acc_biased) * $signed(M_INT32);
+  <span class="vk">wire</span> signed [31:0] shifted = $signed(scaled) >>> TOTAL_SHIFT;
+  <span class="vk">wire</span> signed [31:0] with_zp = shifted + OUT_ZP;
+
+  <span class="vc">// Clip to int8</span>
+  <span class="vk">wire</span> signed [7:0]  clipped = (with_zp >  <span class="vn">127</span>) ?  <span class="vn">8'sd127</span> :
+                               (with_zp < -<span class="vn">128</span>) ? -<span class="vn">8'sd128</span> :
+                                with_zp[7:0];
+  <span class="vc">// ReLU: set negative to 0</span>
+  <span class="vk">assign</span> out_q = (use_relu && clipped[7]) ? <span class="vn">8'd0</span> : clipped;
+<span class="vk">endmodule</span></div>
+    </div>
+
+    <div class="verilog-section">
+      <h3>Module 3 — MaxPool 2×2</h3>
+      <div class="vcode"><span class="vc">// MaxPool 2×2 stride=2 — signed int8 comparison</span>
+<span class="vk">module</span> <span class="vf">maxpool2x2</span> (
+  <span class="vk">input</span>  <span class="vk">wire</span> signed [7:0] a, b, c, d,  <span class="vc">// 4 pixels of 2×2 window</span>
+  <span class="vk">output</span> <span class="vk">wire</span> signed [7:0] y            <span class="vc">// max value</span>
+);
+  <span class="vk">wire</span> signed [7:0] ab = ($signed(a) > $signed(b)) ? a : b;
+  <span class="vk">wire</span> signed [7:0] cd = ($signed(c) > $signed(d)) ? c : d;
+  <span class="vk">assign</span> y = ($signed(ab) > $signed(cd)) ? ab : cd;
+<span class="vk">endmodule</span>
+<span class="vc">// Scale & ZP unchanged — no requantization needed</span></div>
+    </div>
+
+    <div class="verilog-section">
+      <h3>Module 4 — Output Classifier (no FPU)</h3>
+      <div class="vcode"><span class="vc">// So sánh int8 output với threshold — thay thế sigmoid</span>
+<span class="vc">// Threshold: out_i8 < -71 → FATIGUE</span>
+<span class="vc">// Derivation: prob=0.01 → logit=-4.60 → (x+2)*0.066526=-4.60 → x≈-71</span>
+<span class="vk">module</span> <span class="vf">drowsiness_classifier</span> (
+  <span class="vk">input</span>  <span class="vk">wire</span> signed [7:0] out_i8,
+  <span class="vk">output</span> <span class="vk">wire</span>             fatigue,     <span class="vc">// 1 = mắt nhắm</span>
+  <span class="vk">output</span> <span class="vk">wire</span>             active       <span class="vc">// 1 = mắt mở</span>
+);
+  <span class="vk">localparam</span> signed [7:0] THRESHOLD = -<span class="vn">8'sd71</span>;
+  <span class="vk">assign</span> fatigue = ($signed(out_i8) < $signed(THRESHOLD));
+  <span class="vk">assign</span> active  = ~fatigue;
+<span class="vk">endmodule</span></div>
+    </div>
+
+    <div class="verilog-section">
+      <h3>Module 5 — GAP (Global Average Pool)</h3>
+      <div class="vcode"><span class="vc">// GAP 8×8: sum 64 pixels → divide by 64 (= shift 6)</span>
+<span class="vk">module</span> <span class="vf">gap_8x8</span> (
+  <span class="vk">input</span>  <span class="vk">wire</span>         clk, rst, en,
+  <span class="vk">input</span>  <span class="vk">wire</span> signed [7:0]  pixel_in,  <span class="vc">// 1 pixel per cycle</span>
+  <span class="vk">input</span>  <span class="vk">wire</span>         last_pixel,         <span class="vc">// pulse khi đủ 64</span>
+  <span class="vk">output</span> <span class="vk">reg</span>  signed [7:0]  avg_out,   <span class="vc">// int8 average</span>
+  <span class="vk">output</span> <span class="vk">reg</span>               valid
+);
+  <span class="vk">reg</span>  signed [13:0] sum;  <span class="vc">// 14-bit: 64 × 127 = 8,128</span>
+  <span class="vk">wire</span> signed [7:0]  shifted = $signed(sum) >>> <span class="vn">6</span>;  <span class="vc">// ÷ 64</span>
+
+  <span class="vk">always</span> @(<span class="vk">posedge</span> clk) <span class="vk">begin</span>
+    <span class="vk">if</span>  (rst)        begin sum &lt;= <span class="vn">0</span>; valid &lt;= <span class="vn">0</span>; end
+    <span class="vk">else if</span> (last_pixel) begin
+      avg_out &lt;= shifted; valid &lt;= <span class="vn">1</span>; sum &lt;= pixel_in; end
+    <span class="vk">else if</span> (en)     begin sum &lt;= sum + pixel_in; valid &lt;= <span class="vn">0</span>; end
+  <span class="vk">end</span>
+<span class="vk">endmodule</span>
+<span class="vc">// Lặp lại 128 lần (128 channels) — dùng 1 module + mux channel</span></div>
+    </div>
+
+  </div><!-- /tab-rtl -->
+
+</div><!-- /wrapper -->
+
+<script>
+function switchTab(name) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+
+function selectLayer(name) {
+  // Switch to detail tab
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-detail').classList.add('active');
+  document.querySelectorAll('.tab')[1].classList.add('active');
+
+  // Map block id to layer id
+  const map = {
+    'input': null, 'conv1': 'conv1', 'conv2': 'conv2',
+    'conv3': 'conv3', 'conv4': 'conv4',
+    'pool1': 'pool', 'pool2': 'pool', 'pool3': 'pool', 'pool4': 'pool',
+    'gap': 'gap', 'fc1': 'fc1', 'fc2': 'fc2', 'output': 'output'
+  };
+  const layerId = map[name];
+  if (layerId) showLayerById(layerId);
+}
+
+function showLayer(id, btn) {
+  document.querySelectorAll('.lbtn').forEach(b => b.classList.remove('sel'));
+  btn.classList.add('sel');
+  showLayerById(id);
+}
+
+function showLayerById(id) {
+  document.querySelectorAll('.layer-detail').forEach(d => d.style.display = 'none');
+  const el = document.getElementById('layer-' + id);
+  if (el) el.style.display = 'block';
+
+  // Sync selector button
+  document.querySelectorAll('.lbtn').forEach(b => {
+    if (b.getAttribute('onclick').includes("'" + id + "'")) {
+      document.querySelectorAll('.lbtn').forEach(x => x.classList.remove('sel'));
+      b.classList.add('sel');
+    }
+  });
+}
+</script>
+</body>
+</html>

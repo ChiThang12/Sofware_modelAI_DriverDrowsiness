@@ -1,0 +1,5 @@
+// Scales: serving_default_input_q07:0
+// real_value = scale[ch] * int8_value  (zero_point=0 untuk weight)
+
+// ch,  scale_f32,             scale_Q8.24
+   0,  0.003921568859,  00010101  // zp=-128

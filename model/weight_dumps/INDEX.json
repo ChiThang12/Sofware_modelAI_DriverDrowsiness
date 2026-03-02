@@ -1,0 +1,205 @@
+{
+  "model": "drowsiness_asic_int8.tflite",
+  "input_scale": 0.003921568859368563,
+  "input_zp": -128,
+  "output_scale": 0.06652579456567764,
+  "output_zp": -2,
+  "tensors": [
+    {
+      "index": 0,
+      "name": "serving_default_input_q07:0",
+      "shape": [
+        1,
+        128,
+        128,
+        1
+      ],
+      "dtype": "int8",
+      "kind": "weight",
+      "scale_min": 0.003921568859368563,
+      "scale_max": 0.003921568859368563
+    },
+    {
+      "index": 2,
+      "name": "drowsiness_asic/quant_conv1/Conv2D;drowsiness_asic/quant_conv1/LastValueQuant/FakeQuantWithMinMaxVarsPerChannel",
+      "shape": [
+        32,
+        3,
+        3,
+        1
+      ],
+      "dtype": "int8",
+      "kind": "weight",
+      "scale_min": 0.009343139827251434,
+      "scale_max": 0.04399329423904419
+    },
+    {
+      "index": 3,
+      "name": "tfl.pseudo_qconst3",
+      "shape": [
+        32
+      ],
+      "dtype": "int32",
+      "kind": "bias",
+      "scale_min": 3.663976167445071e-05,
+      "scale_max": 0.00017252271936740726
+    },
+    {
+      "index": 6,
+      "name": "drowsiness_asic/quant_conv2/Conv2D;drowsiness_asic/quant_conv2/LastValueQuant/FakeQuantWithMinMaxVarsPerChannel",
+      "shape": [
+        64,
+        3,
+        3,
+        32
+      ],
+      "dtype": "int8",
+      "kind": "weight",
+      "scale_min": 0.0003799096739385277,
+      "scale_max": 0.0021964851766824722
+    },
+    {
+      "index": 7,
+      "name": "tfl.pseudo_qconst2",
+      "shape": [
+        64
+      ],
+      "dtype": "int32",
+      "kind": "bias",
+      "scale_min": 1.3666050108440686e-05,
+      "scale_max": 7.901161734480411e-05
+    },
+    {
+      "index": 10,
+      "name": "drowsiness_asic/quant_conv3/Conv2D;drowsiness_asic/quant_conv3/LastValueQuant/FakeQuantWithMinMaxVarsPerChannel",
+      "shape": [
+        128,
+        3,
+        3,
+        64
+      ],
+      "dtype": "int8",
+      "kind": "weight",
+      "scale_min": 0.0003420318535063416,
+      "scale_max": 0.0013805251801386476
+    },
+    {
+      "index": 11,
+      "name": "tfl.pseudo_qconst1",
+      "shape": [
+        128
+      ],
+      "dtype": "int32",
+      "kind": "bias",
+      "scale_min": 1.4248317711462732e-05,
+      "scale_max": 5.750974014517851e-05
+    },
+    {
+      "index": 14,
+      "name": "drowsiness_asic/quant_conv4/Conv2D;drowsiness_asic/quant_conv4/LastValueQuant/FakeQuantWithMinMaxVarsPerChannel",
+      "shape": [
+        128,
+        3,
+        3,
+        128
+      ],
+      "dtype": "int8",
+      "kind": "weight",
+      "scale_min": 0.000407822139095515,
+      "scale_max": 0.0011893123155459762
+    },
+    {
+      "index": 15,
+      "name": "tfl.pseudo_qconst",
+      "shape": [
+        128
+      ],
+      "dtype": "int32",
+      "kind": "bias",
+      "scale_min": 1.5775325664435513e-05,
+      "scale_max": 4.600483589456417e-05
+    },
+    {
+      "index": 17,
+      "name": "drowsiness_asic/quant_gap/Mean",
+      "shape": [
+        1,
+        128
+      ],
+      "dtype": "int8",
+      "kind": "weight",
+      "scale_min": 0.0160254817456007,
+      "scale_max": 0.0160254817456007
+    },
+    {
+      "index": 18,
+      "name": "tfl.pseudo_qconst4",
+      "shape": [
+        32,
+        128
+      ],
+      "dtype": "int8",
+      "kind": "weight",
+      "scale_min": 0.0015516196144744754,
+      "scale_max": 0.0033070379868149757
+    },
+    {
+      "index": 19,
+      "name": "tfl.pseudo_qconst6",
+      "shape": [
+        32
+      ],
+      "dtype": "int32",
+      "kind": "bias",
+      "scale_min": 2.48654523602454e-05,
+      "scale_max": 5.2996874728705734e-05
+    },
+    {
+      "index": 20,
+      "name": "drowsiness_asic/quant_fc1/MatMul;drowsiness_asic/quant_relu_fc/Relu;drowsiness_asic/quant_fc1/BiasAdd",
+      "shape": [
+        1,
+        32
+      ],
+      "dtype": "int8",
+      "kind": "weight",
+      "scale_min": 0.022260135039687157,
+      "scale_max": 0.022260135039687157
+    },
+    {
+      "index": 21,
+      "name": "drowsiness_asic/quant_output/MatMul;drowsiness_asic/quant_output/LastValueQuant/FakeQuantWithMinMaxVars",
+      "shape": [
+        1,
+        32
+      ],
+      "dtype": "int8",
+      "kind": "weight",
+      "scale_min": 0.00552663067355752,
+      "scale_max": 0.00552663067355752
+    },
+    {
+      "index": 22,
+      "name": "tfl.pseudo_qconst5",
+      "shape": [
+        1
+      ],
+      "dtype": "int32",
+      "kind": "bias",
+      "scale_min": 0.0001230235502589494,
+      "scale_max": 0.0001230235502589494
+    },
+    {
+      "index": 23,
+      "name": "StatefulPartitionedCall:0",
+      "shape": [
+        1,
+        1
+      ],
+      "dtype": "int8",
+      "kind": "weight",
+      "scale_min": 0.06652579456567764,
+      "scale_max": 0.06652579456567764
+    }
+  ]
+}
