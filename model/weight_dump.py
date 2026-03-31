@@ -5,8 +5,8 @@ FIX: Thêm dummy invoke() trước get_tensor() để tránh lỗi
      "Tensor data is null. Run allocate_tensors() first"
 
 Chạy:
-  python weight_dump.py --model drowsiness_asic_int8.tflite
-  python weight_dump.py --model drowsiness_asic_int8.tflite --out my_weights
+  python .\model\weight_dump.py --model .\model\drowsiness_asic_int8.tflite
+  python .\model\weight_dump.py --model .\model\drowsiness_asic_int8.tflite --out my_weights
 """
 
 import numpy as np

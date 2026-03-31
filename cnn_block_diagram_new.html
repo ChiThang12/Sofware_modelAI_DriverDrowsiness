@@ -1,0 +1,1654 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASIC CNN — Kiến trúc Drowsiness Detection</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --bg:       #07090f;
+  --bg2:      #0c1018;
+  --bg3:      #111622;
+  --bg4:      #161e2e;
+  --border:   #1c2840;
+  --border2:  #243354;
+
+  --cyan:     #00e5ff;
+  --violet:   #7c5cfc;
+  --green:    #00ffaa;
+  --orange:   #ff7240;
+  --yellow:   #ffd060;
+  --pink:     #ff4d8d;
+  --blue:     #4d94ff;
+
+  --text:     #dce8f5;
+  --textdim:  #4a6080;
+  --textmid:  #8aa0bf;
+
+  /* Layer colors */
+  --depthwise-bg: #061825;  --depthwise-b: #00e5ff;
+  --pointwise-bg: #0c0f25;  --pointwise-b: #4d94ff;
+  --bn-bg:        #0a1520;  --bn-b:        #00ffaa;
+  --relu-bg:      #100e20;  --relu-b:      #7c5cfc;
+  --pool-bg:      #140d20;  --pool-b:      #ff4d8d;
+  --gap-bg:       #180e08;  --gap-b:       #ff7240;
+  --fc-bg:        #0e1a10;  --fc-b:        #00ffaa;
+  --out-bg:       #1a1408;  --out-b:       #ffd060;
+  --inp-bg:       #0c1220;  --inp-b:       #4a6080;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Subtle scanline */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 2px,
+    rgba(0,229,255,0.008) 2px, rgba(0,229,255,0.008) 4px
+  );
+  pointer-events: none; z-index: 9999;
+}
+
+/* Grid */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(rgba(0,229,255,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,229,255,0.025) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none; z-index: 0;
+}
+
+.wrapper {
+  position: relative; z-index: 1;
+  max-width: 1500px; margin: 0 auto;
+  padding: 36px 28px 100px;
+}
+
+/* ═══════════════════ HEADER ═══════════════════ */
+.header {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 48px 0 52px; gap: 14px; text-align: center;
+}
+
+.header-badge {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem; letter-spacing: 0.2em; font-weight: 600;
+  color: var(--cyan); border: 1px solid rgba(0,229,255,0.3);
+  padding: 5px 16px; border-radius: 2px;
+  background: rgba(0,229,255,0.05);
+  text-transform: uppercase;
+}
+
+.header h1 {
+  font-size: clamp(1.6rem, 4vw, 2.9rem);
+  font-weight: 700; letter-spacing: -0.03em; line-height: 1.1;
+  color: var(--text);
+}
+.header h1 span {
+  background: linear-gradient(90deg, var(--cyan), var(--violet), var(--pink));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+
+.header-sub {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8rem; color: var(--textdim); letter-spacing: 0.05em;
+}
+
+/* Stats bar */
+.stats-bar {
+  display: flex; gap: 1px; margin: 8px 0;
+  border: 1px solid var(--border2); border-radius: 6px; overflow: hidden;
+}
+.stat {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 12px 24px; background: var(--bg2); flex: 1; min-width: 100px;
+  border-right: 1px solid var(--border);
+}
+.stat:last-child { border-right: none; }
+.stat-val {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1.25rem; font-weight: 700; line-height: 1;
+}
+.stat-lbl {
+  font-size: 0.65rem; color: var(--textdim); margin-top: 5px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+
+/* ═══════════════════ TABS ═══════════════════ */
+.tabs {
+  display: flex; gap: 2px; margin-bottom: 36px;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px; width: fit-content; margin-left: auto; margin-right: auto;
+}
+.tab {
+  padding: 9px 22px; border-radius: 4px;
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem; font-weight: 600;
+  letter-spacing: 0.06em; cursor: pointer; transition: all 0.2s;
+  color: var(--textdim); border: none; background: none;
+  text-transform: uppercase;
+}
+.tab:hover { color: var(--cyan); }
+.tab.active { background: var(--cyan); color: #000; }
+
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ═══════════════════ FLOW DIAGRAM ═══════════════════ */
+
+/* Architecture note */
+.arch-note {
+  display: flex; align-items: flex-start; gap: 12px;
+  background: rgba(0,229,255,0.04); border: 1px solid rgba(0,229,255,0.15);
+  border-left: 3px solid var(--cyan); border-radius: 4px;
+  padding: 14px 18px; margin-bottom: 36px; font-size: 0.8rem;
+  color: var(--textmid); line-height: 1.6;
+}
+.arch-note strong { color: var(--cyan); }
+.arch-note code {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem;
+  background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 2px;
+  color: var(--yellow);
+}
+
+/* Pipeline strip */
+.pipeline {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 0;
+}
+
+.pipe-block-group {
+  width: 100%; display: flex; flex-direction: column; align-items: center;
+}
+
+/* Section label */
+.section-label {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.62rem;
+  font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--textdim); padding: 6px 18px 6px; border-top: 1px dashed var(--border);
+  width: 100%; text-align: left; margin: 12px 0 10px;
+}
+.section-label.first { border-top: none; margin-top: 0; }
+
+/* Row of ops */
+.pipe-row {
+  display: flex; align-items: stretch; justify-content: center;
+  gap: 0; width: 100%;
+}
+
+/* Single op block */
+.op {
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 14px 20px; border-top: 2px solid; cursor: pointer;
+  transition: all 0.2s; position: relative; flex: 1;
+  min-width: 0;
+}
+.op:hover { filter: brightness(1.25); transform: translateY(-2px); }
+.op + .op { border-left: 1px solid var(--border); }
+
+.op-tag {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.58rem;
+  font-weight: 700; letter-spacing: 0.15em; opacity: 0.75; margin-bottom: 4px;
+}
+.op-name { font-size: 0.88rem; font-weight: 700; line-height: 1.2; margin-bottom: 3px; }
+.op-desc { font-size: 0.7rem; opacity: 0.7; line-height: 1.4; }
+.op-shape {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem;
+  margin-top: 8px; padding: 4px 8px; border-radius: 3px;
+  background: rgba(0,0,0,0.3); display: inline-block; opacity: 0.9;
+  width: fit-content;
+}
+.op-params {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem;
+  margin-top: 4px; opacity: 0.6;
+}
+
+/* Colors per op type */
+.op-dw  { background: var(--depthwise-bg); border-color: var(--depthwise-b); color: var(--depthwise-b); }
+.op-pw  { background: var(--pointwise-bg); border-color: var(--pointwise-b); color: var(--pointwise-b); }
+.op-bn  { background: var(--bn-bg);        border-color: var(--bn-b);        color: var(--bn-b); }
+.op-rl  { background: var(--relu-bg);      border-color: var(--relu-b);      color: var(--relu-b); }
+.op-pl  { background: var(--pool-bg);      border-color: var(--pool-b);      color: var(--pool-b); }
+.op-gap { background: var(--gap-bg);       border-color: var(--gap-b);       color: var(--gap-b); }
+.op-fc  { background: var(--fc-bg);        border-color: var(--fc-b);        color: var(--fc-b); }
+.op-out { background: var(--out-bg);       border-color: var(--out-b);       color: var(--out-b); }
+.op-inp { background: var(--inp-bg);       border-color: var(--inp-b);       color: var(--inp-b); }
+
+/* Vertical connector between rows */
+.pipe-connector {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 6px 0; gap: 0; position: relative; width: 100%;
+}
+.pipe-connector::before {
+  content: '';
+  width: 2px; height: 16px;
+  background: linear-gradient(to bottom, var(--border2), var(--cyan));
+}
+.pipe-connector::after {
+  content: '';
+  border: 5px solid transparent;
+  border-top: 7px solid var(--cyan);
+  margin-top: -1px;
+}
+.pipe-connector-label {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem;
+  color: var(--textdim); margin-top: 4px;
+}
+
+/* Block-level wrapper with border */
+.block-wrapper {
+  width: 100%; border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden; margin-bottom: 0;
+}
+.block-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 16px; background: var(--bg3); border-bottom: 1px solid var(--border);
+}
+.block-header-name {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.block-header-shape {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; color: var(--textdim);
+}
+
+/* Summary section below flow */
+.legend {
+  display: flex; flex-wrap: wrap; gap: 10px; margin-top: 32px;
+  padding: 18px; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
+}
+.legend-item { display: flex; align-items: center; gap: 8px; }
+.legend-dot {
+  width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0;
+}
+.legend-text { font-size: 0.72rem; color: var(--textmid); font-family: 'IBM Plex Mono', monospace; }
+
+/* ═══════════════════ DETAIL TAB ═══════════════════ */
+.layer-selector {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 24px;
+}
+.lbtn {
+  padding: 7px 16px; border-radius: 4px; border: 1px solid var(--border);
+  background: var(--bg2); color: var(--textdim); cursor: pointer;
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem;
+  font-weight: 600; transition: all 0.2s; letter-spacing: 0.05em;
+}
+.lbtn:hover { border-color: var(--cyan); color: var(--cyan); }
+.lbtn.sel { background: rgba(0,229,255,0.1); border-color: var(--cyan); color: var(--cyan); }
+
+.layer-detail { display: none; }
+.layer-detail.active-detail { display: block; }
+
+.detail-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+}
+@media (max-width: 900px) { .detail-grid { grid-template-columns: 1fr; } }
+
+.d-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 20px;
+}
+.d-card.hi { border-color: var(--cyan); box-shadow: 0 0 24px rgba(0,229,255,0.08); }
+.d-card.full { grid-column: 1 / -1; }
+
+.d-card h3 {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem;
+  font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--cyan); margin-bottom: 14px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Info rows */
+.ir { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 0; border-bottom: 1px solid rgba(28,40,64,0.6); }
+.ir:last-child { border-bottom: none; }
+.ik { color: var(--textdim); font-size: 0.76rem; }
+.iv { font-family: 'IBM Plex Mono', monospace; font-size: 0.76rem; color: var(--text); }
+.iv.g { color: var(--green); }
+.iv.o { color: var(--orange); }
+.iv.y { color: var(--yellow); }
+.iv.c { color: var(--cyan); }
+.iv.p { color: var(--pink); }
+
+/* Formula box */
+.fbox {
+  background: #040810; border: 1px solid var(--border);
+  border-radius: 6px; padding: 16px 18px;
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.74rem;
+  line-height: 1.9; overflow-x: auto; white-space: pre;
+}
+.cmt { color: #334d66; }
+.kw  { color: var(--violet); font-weight: 600; }
+.num { color: var(--orange); }
+.fn  { color: var(--green); }
+.vr  { color: var(--cyan); }
+.str { color: var(--yellow); }
+
+/* Tensor vis */
+.tv { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+.td { text-align: center; }
+.tb {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem;
+  padding: 5px 10px; border-radius: 3px; border: 1px solid var(--border);
+  background: var(--bg3); display: block;
+}
+.tb.in  { border-color: var(--cyan);   color: var(--cyan);   background: rgba(0,229,255,0.05); }
+.tb.out { border-color: var(--green);  color: var(--green);  background: rgba(0,255,170,0.05); }
+.tb.w   { border-color: var(--yellow); color: var(--yellow); background: rgba(255,208,96,0.05); }
+.tb.b   { border-color: var(--orange); color: var(--orange); background: rgba(255,114,64,0.05); }
+.tl { font-size: 0.58rem; color: var(--textdim); margin-top: 4px; }
+.ta { color: var(--violet); font-size: 1.1rem; }
+
+/* Table */
+.dt { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
+.dt th {
+  background: var(--bg3); color: var(--textdim); padding: 8px 12px;
+  text-align: left; font-weight: 600; letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border); font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+}
+.dt td {
+  padding: 7px 12px; border-bottom: 1px solid rgba(28,40,64,0.5);
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem;
+}
+.dt tr:last-child td { border-bottom: none; }
+.dt tr:hover td { background: rgba(255,255,255,0.02); }
+
+.tag {
+  display: inline-block; padding: 2px 7px; border-radius: 2px;
+  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.06em;
+  font-family: 'IBM Plex Mono', monospace;
+}
+.ti8  { background: rgba(0,229,255,0.12);  color: var(--cyan); }
+.ti32 { background: rgba(124,92,252,0.15); color: var(--violet); }
+.ti64 { background: rgba(255,114,64,0.15); color: var(--orange); }
+.tf32 { background: rgba(0,255,170,0.12);  color: var(--green); }
+
+/* Note box */
+.nb {
+  background: rgba(255,208,96,0.05); border: 1px solid rgba(255,208,96,0.2);
+  border-left: 3px solid var(--yellow); border-radius: 4px;
+  padding: 12px 16px; font-size: 0.77rem; color: var(--textmid);
+  line-height: 1.6; margin: 12px 0;
+}
+.nb strong { color: var(--yellow); }
+.nb code {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem;
+  background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 2px;
+  color: var(--cyan);
+}
+
+/* ═══════════════════ DATAPATH TAB ═══════════════════ */
+.dp-section { margin-bottom: 32px; }
+.dp-section h2 {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem;
+  font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--orange); margin-bottom: 16px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pe-diagram {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 24px; margin-bottom: 16px;
+  display: flex; flex-direction: column; gap: 0; align-items: center;
+}
+
+.pe-row {
+  display: flex; align-items: center; gap: 0; width: 100%; justify-content: center;
+}
+.pe-box {
+  border: 1.5px solid; border-radius: 6px; padding: 10px 16px;
+  text-align: center; min-width: 110px;
+}
+.pe-box .pb-name { font-size: 0.78rem; font-weight: 700; margin-bottom: 3px; }
+.pe-box .pb-sub  { font-family: 'IBM Plex Mono', monospace; font-size: 0.62rem; opacity: 0.7; }
+
+.pe-box.inp-b  { border-color: var(--textdim); color: var(--textdim); background: var(--inp-bg); }
+.pe-box.sub-b  { border-color: var(--blue);    color: var(--blue);    background: #060e1f; }
+.pe-box.mac-b  { border-color: var(--cyan);    color: var(--cyan);    background: var(--depthwise-bg); }
+.pe-box.acc-b  { border-color: var(--violet);  color: var(--violet);  background: var(--relu-bg); }
+.pe-box.bias-b { border-color: var(--orange);  color: var(--orange);  background: var(--gap-bg); }
+.pe-box.req-b  { border-color: var(--pink);    color: var(--pink);    background: #1a0812; }
+.pe-box.relu-b { border-color: var(--green);   color: var(--green);   background: var(--bn-bg); }
+.pe-box.out-b  { border-color: var(--yellow);  color: var(--yellow);  background: var(--out-bg); }
+
+.pe-arr {
+  display: flex; flex-direction: column; align-items: center;
+  min-width: 50px; color: var(--textdim);
+}
+.pe-arr-line { width: 36px; height: 2px; background: linear-gradient(90deg, var(--border2), var(--cyan)); position: relative; }
+.pe-arr-line::after {
+  content: ''; position: absolute; right: -6px; top: -4px;
+  border: 5px solid transparent; border-left: 7px solid var(--cyan);
+}
+.pe-arr-lbl { font-family: 'IBM Plex Mono', monospace; font-size: 0.58rem; color: var(--textdim); margin-top: 5px; text-align: center; }
+
+.pe-v-arr {
+  width: 2px; height: 20px;
+  background: linear-gradient(to bottom, var(--border2), var(--cyan));
+  position: relative; margin: 0 auto;
+}
+.pe-v-arr::after {
+  content: ''; position: absolute; bottom: -6px; left: -4px;
+  border: 4px solid transparent; border-top: 7px solid var(--cyan);
+}
+
+/* ═══════════════════ RTL TAB ═══════════════════ */
+.rtl-section { margin-bottom: 36px; }
+.rtl-section h2 {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem;
+  font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--violet); margin-bottom: 16px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.vcode {
+  background: #030609; border: 1px solid var(--border); border-radius: 8px;
+  padding: 20px 22px; font-family: 'IBM Plex Mono', monospace; font-size: 0.74rem;
+  line-height: 1.9; overflow-x: auto; white-space: pre;
+}
+.vc  { color: #2d4060; }
+.vk  { color: var(--violet); font-weight: 600; }
+.vn  { color: var(--orange); }
+.vv  { color: var(--cyan); }
+.vf  { color: var(--green); }
+.vs  { color: var(--yellow); }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+<!-- ── HEADER ──────────────────────────────────────────────────────── -->
+<div class="header">
+  <div class="header-badge">ASIC · INT8 Quantized · SeparableConv2D</div>
+  <h1>Drowsiness CNN<br><span>Kiến Trúc & RTL Datapath</span></h1>
+  <div class="header-sub">drowsiness_asic_int8.tflite &nbsp;·&nbsp; QAT Pipeline &nbsp;·&nbsp; Binary Classifier</div>
+
+  <div class="stats-bar">
+    <div class="stat"><span class="stat-val" style="color:var(--cyan)">~260 KB</span><span class="stat-lbl">Weight SRAM (int8)</span></div>
+    <div class="stat"><span class="stat-val" style="color:var(--violet)">~1.5 KB</span><span class="stat-lbl">Bias ROM (int32)</span></div>
+    <div class="stat"><span class="stat-val" style="color:var(--green)">~1.9 B</span><span class="stat-lbl">Total MACs</span></div>
+    <div class="stat"><span class="stat-val" style="color:var(--orange)">4</span><span class="stat-lbl">SepConv Blocks</span></div>
+    <div class="stat"><span class="stat-val" style="color:var(--yellow)">128×128</span><span class="stat-lbl">Input (Q0.7)</span></div>
+    <div class="stat"><span class="stat-val" style="color:var(--pink)">1 bit</span><span class="stat-lbl">Output (logit)</span></div>
+  </div>
+</div>
+
+<!-- ── TABS ──────────────────────────────────────────────────────────── -->
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('flow', this)">📊 Flow Diagram</div>
+  <div class="tab" onclick="switchTab('detail', this)">🔍 Chi tiết Layer</div>
+  <div class="tab" onclick="switchTab('datapath', this)">⚙️ Datapath PE</div>
+  <div class="tab" onclick="switchTab('rtl', this)">💻 RTL / Verilog</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     TAB 1 — FLOW DIAGRAM
+══════════════════════════════════════════════════════════════════════ -->
+<div id="tab-flow" class="panel active">
+
+  <div class="arch-note">
+    ⚠️ <strong>SeparableConv2D</strong> gồm 2 bước tách biệt:
+    <strong>Depthwise Conv</strong> (3×3, mỗi channel độc lập) +
+    <strong>Pointwise Conv</strong> (1×1, kết hợp channels).
+    Mỗi bước có bộ weight, bias, và scale factor riêng.
+    BatchNorm được <strong>fold</strong> vào weight/bias sau training:
+    <code>W_fused = W·γ/√(σ²+ε)</code>.
+    Block 4 <strong>không có MaxPool</strong> (giữ nguyên 16×16).
+  </div>
+
+  <div class="pipeline">
+
+    <!-- INPUT -->
+    <div class="pipe-block-group">
+      <div class="section-label first">INPUT &nbsp;·&nbsp; Q0.7 Fixed-Point</div>
+      <div class="block-wrapper">
+        <div class="block-header">
+          <span class="block-header-name" style="color:var(--textdim)">📷 Camera Frame (grayscale + FaceMesh landmarks)</span>
+          <span class="block-header-shape">shape: [1, 128, 128, 1]</span>
+        </div>
+        <div class="pipe-row">
+          <div class="op op-inp" onclick="showDetailFromFlow('input')">
+            <div class="op-tag">INPUT TENSOR</div>
+            <div class="op-name">Pixel Q0.7</div>
+            <div class="op-desc">uint8 >> 1 → int8 [0,127]<br>→ /128.0 → float [0,1]</div>
+            <div class="op-shape">[1, 128, 128, 1] · int8</div>
+            <div class="op-params">scale=1/128 · zp=−128</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pipe-connector"><div class="pipe-connector-label">[1,128,128,1]</div></div>
+
+    <!-- BLOCK 1 -->
+    <div class="pipe-block-group">
+      <div class="section-label">BLOCK 1 &nbsp;·&nbsp; SeparableConv2D(32) + MaxPool → 64×64×32</div>
+      <div class="block-wrapper">
+        <div class="block-header">
+          <span class="block-header-name" style="color:var(--depthwise-b)">SepConv Block 1</span>
+          <span class="block-header-shape">output: [1, 64, 64, 32]</span>
+        </div>
+        <div class="pipe-row">
+          <div class="op op-dw" onclick="showDetailFromFlow('b1_dw')">
+            <div class="op-tag">DEPTHWISE CONV</div>
+            <div class="op-name">DW Conv 3×3</div>
+            <div class="op-desc">1 filter/channel · stride=1<br>padding=SAME</div>
+            <div class="op-shape">W: [1,3,3,1]×1ch · 1 B</div>
+            <div class="op-params">9 MACs/pixel</div>
+          </div>
+          <div class="op op-pw" onclick="showDetailFromFlow('b1_pw')">
+            <div class="op-tag">POINTWISE CONV</div>
+            <div class="op-name">PW Conv 1×1</div>
+            <div class="op-desc">1→32 channels<br>kernel=1×1</div>
+            <div class="op-shape">W: [32,1,1,1] = 32 B</div>
+            <div class="op-params">32 MACs/pixel</div>
+          </div>
+          <div class="op op-bn" onclick="showDetailFromFlow('b1_bn')">
+            <div class="op-tag">BATCHNORM → FOLD</div>
+            <div class="op-name">BN + Fold</div>
+            <div class="op-desc">γ,β,μ,σ per channel<br>folded vào W,b</div>
+            <div class="op-shape">32 scale factors</div>
+            <div class="op-params">0 op sau fold</div>
+          </div>
+          <div class="op op-rl">
+            <div class="op-tag">ACTIVATION</div>
+            <div class="op-name">ReLU</div>
+            <div class="op-desc">clip(x, 0, 127)<br>comparator hardware</div>
+            <div class="op-shape">[1,128,128,32]</div>
+            <div class="op-params">range [0, 127]</div>
+          </div>
+          <div class="op op-pl" onclick="showDetailFromFlow('pool')">
+            <div class="op-tag">DOWNSAMPLE</div>
+            <div class="op-name">MaxPool 2×2</div>
+            <div class="op-desc">stride=2 · no padding<br>4 comparators</div>
+            <div class="op-shape">128×128 → 64×64</div>
+            <div class="op-params">no requant needed</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pipe-connector"><div class="pipe-connector-label">[1,64,64,32]</div></div>
+
+    <!-- BLOCK 2 -->
+    <div class="pipe-block-group">
+      <div class="section-label">BLOCK 2 &nbsp;·&nbsp; SeparableConv2D(64) + MaxPool → 32×32×64</div>
+      <div class="block-wrapper">
+        <div class="block-header">
+          <span class="block-header-name" style="color:var(--depthwise-b)">SepConv Block 2</span>
+          <span class="block-header-shape">output: [1, 32, 32, 64]</span>
+        </div>
+        <div class="pipe-row">
+          <div class="op op-dw" onclick="showDetailFromFlow('b2_dw')">
+            <div class="op-tag">DEPTHWISE CONV</div>
+            <div class="op-name">DW Conv 3×3</div>
+            <div class="op-desc">32 ch độc lập<br>9 MACs × 32 ch</div>
+            <div class="op-shape">W: [32,3,3,1] = 288 B</div>
+            <div class="op-params">9 × 32 = 288 MACs/px</div>
+          </div>
+          <div class="op op-pw" onclick="showDetailFromFlow('b2_pw')">
+            <div class="op-tag">POINTWISE CONV</div>
+            <div class="op-name">PW Conv 1×1</div>
+            <div class="op-desc">32→64 channels<br>kernel=1×1</div>
+            <div class="op-shape">W: [64,1,1,32] = 2 KB</div>
+            <div class="op-params">32 × 64 = 2048 MACs/px</div>
+          </div>
+          <div class="op op-bn">
+            <div class="op-tag">BATCHNORM → FOLD</div>
+            <div class="op-name">BN + Fold</div>
+            <div class="op-desc">64 channels<br>folded into PW</div>
+            <div class="op-shape">64 scale factors</div>
+            <div class="op-params">0 op sau fold</div>
+          </div>
+          <div class="op op-rl">
+            <div class="op-tag">ACTIVATION</div>
+            <div class="op-name">ReLU</div>
+            <div class="op-desc">clip(x, 0, 127)</div>
+            <div class="op-shape">[1,64,64,64]</div>
+            <div class="op-params">range [0, 127]</div>
+          </div>
+          <div class="op op-pl" onclick="showDetailFromFlow('pool')">
+            <div class="op-tag">DOWNSAMPLE</div>
+            <div class="op-name">MaxPool 2×2</div>
+            <div class="op-desc">stride=2</div>
+            <div class="op-shape">64×64 → 32×32</div>
+            <div class="op-params">no requant</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pipe-connector"><div class="pipe-connector-label">[1,32,32,64]</div></div>
+
+    <!-- BLOCK 3 -->
+    <div class="pipe-block-group">
+      <div class="section-label">BLOCK 3 &nbsp;·&nbsp; SeparableConv2D(128) + MaxPool → 16×16×128</div>
+      <div class="block-wrapper">
+        <div class="block-header">
+          <span class="block-header-name" style="color:var(--depthwise-b)">SepConv Block 3</span>
+          <span class="block-header-shape">output: [1, 16, 16, 128]</span>
+        </div>
+        <div class="pipe-row">
+          <div class="op op-dw" onclick="showDetailFromFlow('b3_dw')">
+            <div class="op-tag">DEPTHWISE CONV</div>
+            <div class="op-name">DW Conv 3×3</div>
+            <div class="op-desc">64 ch độc lập<br>9 × 64 ch</div>
+            <div class="op-shape">W: [64,3,3,1] = 576 B</div>
+            <div class="op-params">9 × 64 = 576 MACs/px</div>
+          </div>
+          <div class="op op-pw" onclick="showDetailFromFlow('b3_pw')">
+            <div class="op-tag">POINTWISE CONV</div>
+            <div class="op-name">PW Conv 1×1</div>
+            <div class="op-desc">64→128 channels</div>
+            <div class="op-shape">W: [128,1,1,64] = 8 KB</div>
+            <div class="op-params">64 × 128 = 8K MACs/px</div>
+          </div>
+          <div class="op op-bn">
+            <div class="op-tag">BATCHNORM → FOLD</div>
+            <div class="op-name">BN + Fold</div>
+            <div class="op-desc">128 channels</div>
+            <div class="op-shape">128 scale factors</div>
+            <div class="op-params">0 op sau fold</div>
+          </div>
+          <div class="op op-rl">
+            <div class="op-tag">ACTIVATION</div>
+            <div class="op-name">ReLU</div>
+            <div class="op-desc">clip(x, 0, 127)</div>
+            <div class="op-shape">[1,32,32,128]</div>
+            <div class="op-params">range [0, 127]</div>
+          </div>
+          <div class="op op-pl" onclick="showDetailFromFlow('pool')">
+            <div class="op-tag">DOWNSAMPLE</div>
+            <div class="op-name">MaxPool 2×2</div>
+            <div class="op-desc">stride=2</div>
+            <div class="op-shape">32×32 → 16×16</div>
+            <div class="op-params">no requant</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pipe-connector"><div class="pipe-connector-label">[1,16,16,128]</div></div>
+
+    <!-- BLOCK 4 -->
+    <div class="pipe-block-group">
+      <div class="section-label">BLOCK 4 &nbsp;·&nbsp; SeparableConv2D(128) · Không MaxPool → 16×16×128</div>
+      <div class="block-wrapper">
+        <div class="block-header">
+          <span class="block-header-name" style="color:var(--depthwise-b)">SepConv Block 4 &nbsp;<span style="color:var(--pink);font-size:0.6rem">▲ NO POOLING</span></span>
+          <span class="block-header-shape">output: [1, 16, 16, 128]</span>
+        </div>
+        <div class="pipe-row">
+          <div class="op op-dw" onclick="showDetailFromFlow('b4_dw')">
+            <div class="op-tag">DEPTHWISE CONV</div>
+            <div class="op-name">DW Conv 3×3</div>
+            <div class="op-desc">128 ch độc lập<br>9 × 128 ch</div>
+            <div class="op-shape">W: [128,3,3,1] = 1152 B</div>
+            <div class="op-params">9 × 128 = 1152 MACs/px</div>
+          </div>
+          <div class="op op-pw" onclick="showDetailFromFlow('b4_pw')">
+            <div class="op-tag">POINTWISE CONV</div>
+            <div class="op-name">PW Conv 1×1</div>
+            <div class="op-desc">128→128 channels</div>
+            <div class="op-shape">W: [128,1,1,128] = 16 KB</div>
+            <div class="op-params">128 × 128 = 16K MACs/px</div>
+          </div>
+          <div class="op op-bn">
+            <div class="op-tag">BATCHNORM → FOLD</div>
+            <div class="op-name">BN + Fold</div>
+            <div class="op-desc">128 channels</div>
+            <div class="op-shape">128 scale factors</div>
+            <div class="op-params">0 op sau fold</div>
+          </div>
+          <div class="op op-rl">
+            <div class="op-tag">ACTIVATION</div>
+            <div class="op-name">ReLU</div>
+            <div class="op-desc">clip(x, 0, 127)<br>giữ 16×16 feature map</div>
+            <div class="op-shape">[1,16,16,128]</div>
+            <div class="op-params">range [0, 127]</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pipe-connector"><div class="pipe-connector-label">[1,16,16,128]</div></div>
+
+    <!-- GAP -->
+    <div class="pipe-block-group">
+      <div class="section-label">HEAD &nbsp;·&nbsp; Global Average Pooling → Dense → Output</div>
+      <div class="block-wrapper">
+        <div class="block-header">
+          <span class="block-header-name" style="color:var(--gap-b)">Classifier Head</span>
+          <span class="block-header-shape">output: [1, 1] · int8 logit</span>
+        </div>
+        <div class="pipe-row">
+          <div class="op op-gap" onclick="showDetailFromFlow('gap')">
+            <div class="op-tag">GLOBAL AVG POOL</div>
+            <div class="op-name">GAP</div>
+            <div class="op-desc">mean(16×16) per ch<br>256 add + 1 shift</div>
+            <div class="op-shape">[1,16,16,128] → [1,128]</div>
+            <div class="op-params">÷256 = >>8</div>
+          </div>
+          <div class="op op-fc" onclick="showDetailFromFlow('fc1')">
+            <div class="op-tag">DENSE FC1</div>
+            <div class="op-name">FC 128→32</div>
+            <div class="op-desc">128×32 = 4096 MACs<br>+ bias + ReLU</div>
+            <div class="op-shape">W: [32,128] = 4 KB</div>
+            <div class="op-params">32 scales · ReLU</div>
+          </div>
+          <div class="op op-fc" onclick="showDetailFromFlow('fc2')">
+            <div class="op-tag">DENSE FC2</div>
+            <div class="op-name">FC 32→1</div>
+            <div class="op-desc">32×1 = 32 MACs<br>+ bias · NO activation</div>
+            <div class="op-shape">W: [1,32] = 32 B</div>
+            <div class="op-params">1 scale · logit</div>
+          </div>
+          <div class="op op-out" onclick="showDetailFromFlow('output')">
+            <div class="op-tag">OUTPUT</div>
+            <div class="op-name">int8 Logit</div>
+            <div class="op-desc">scale≈0.0665, zp=−2<br>ASIC: compare vs threshold</div>
+            <div class="op-shape">[1, 1] · int8</div>
+            <div class="op-params">0 = FATIGUE · 1 = ACTIVE</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /pipeline -->
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--depthwise-b)"></div><span class="legend-text">Depthwise Conv (3×3, per-channel)</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--pointwise-b)"></div><span class="legend-text">Pointwise Conv (1×1, cross-channel)</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--bn-b)"></div><span class="legend-text">BatchNorm (folded vào weight)</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--relu-b)"></div><span class="legend-text">ReLU (clip 0..127)</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--pool-b)"></div><span class="legend-text">MaxPool 2×2 (no requant)</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--gap-b)"></div><span class="legend-text">Global Average Pool (>>8)</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--fc-b)"></div><span class="legend-text">Dense FC (MAC + requant)</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--out-b)"></div><span class="legend-text">Output logit int8</span></div>
+  </div>
+
+</div><!-- /tab-flow -->
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     TAB 2 — LAYER DETAIL
+══════════════════════════════════════════════════════════════════════ -->
+<div id="tab-detail" class="panel">
+
+  <div class="layer-selector">
+    <div class="lbtn sel" onclick="showLayer('input',  this)">Input</div>
+    <div class="lbtn"     onclick="showLayer('b1_dw',  this)">B1 DW</div>
+    <div class="lbtn"     onclick="showLayer('b1_pw',  this)">B1 PW</div>
+    <div class="lbtn"     onclick="showLayer('b2_dw',  this)">B2 DW</div>
+    <div class="lbtn"     onclick="showLayer('b2_pw',  this)">B2 PW</div>
+    <div class="lbtn"     onclick="showLayer('b3_dw',  this)">B3 DW</div>
+    <div class="lbtn"     onclick="showLayer('b3_pw',  this)">B3 PW</div>
+    <div class="lbtn"     onclick="showLayer('b4_dw',  this)">B4 DW</div>
+    <div class="lbtn"     onclick="showLayer('b4_pw',  this)">B4 PW</div>
+    <div class="lbtn"     onclick="showLayer('pool',   this)">MaxPool</div>
+    <div class="lbtn"     onclick="showLayer('gap',    this)">GAP</div>
+    <div class="lbtn"     onclick="showLayer('fc1',    this)">FC1</div>
+    <div class="lbtn"     onclick="showLayer('fc2',    this)">FC2</div>
+    <div class="lbtn"     onclick="showLayer('output', this)">Output</div>
+  </div>
+
+  <!-- INPUT -->
+  <div id="layer-input" class="layer-detail active-detail">
+    <div class="detail-grid">
+      <div class="d-card hi">
+        <h3>📐 Tensor Shape & Format</h3>
+        <div class="tv">
+          <div class="td"><div class="tb in">[1, 128, 128, 1]</div><div class="tl">Input Tensor</div></div>
+          <div class="ta">→</div>
+          <div class="td"><div class="tb out">dtype: int8</div><div class="tl">ASIC input</div></div>
+        </div>
+        <div class="ir"><span class="ik">Preprocessing pipeline</span><span class="iv c">BGR → Gray → resize → >>1 → /128</span></div>
+        <div class="ir"><span class="ik">uint8 pixel → int8 Q0.7</span><span class="iv">uint8_px >> 1 → int8 [0, 127]</span></div>
+        <div class="ir"><span class="ik">int8 → float32 (TFLite)</span><span class="iv">/128.0 → float [0.0, 0.992]</span></div>
+        <div class="ir"><span class="ik">Quantization scale</span><span class="iv g">1 / 128 = 0.0078125</span></div>
+        <div class="ir"><span class="ik">Zero point (inp_zp)</span><span class="iv o">−128</span></div>
+        <div class="ir"><span class="ik">FaceMesh landmarks</span><span class="iv">vẽ trắng lên ảnh grayscale trước khi resize</span></div>
+        <div class="ir"><span class="ik">Input memory</span><span class="iv y">128 × 128 = 16,384 bytes = 16 KB</span></div>
+      </div>
+      <div class="d-card">
+        <h3>⚙️ Preprocessing RTL</h3>
+        <div class="fbox"><span class="cmt">// Camera → ASIC input pipeline</span>
+<span class="cmt">// 1. Grayscale (nếu camera BGR)</span>
+<span class="vv">gray</span> = (<span class="vn">77</span>*R + <span class="vn">150</span>*G + <span class="vn">29</span>*B) >> <span class="vn">8</span>  <span class="cmt">// uint8</span>
+
+<span class="cmt">// 2. Q0.7 encode: shift right 1</span>
+<span class="vv">q07</span>  = <span class="vk">uint8</span>(<span class="vv">gray</span>) >> <span class="vn">1</span>  <span class="cmt">// range [0, 127]</span>
+
+<span class="cmt">// 3. TFLite input quantize</span>
+<span class="cmt">// float = int8 × 0.0078125 + (−128 × 0.0078125)</span>
+<span class="cmt">// i.e. ASIC sends q07 directly as int8 input</span>
+<span class="vv">inp_i8</span> = <span class="vk">int8</span>(<span class="vv">q07</span>)  <span class="cmt">// reinterpret [0,127] as signed</span>
+
+<span class="cmt">// First Conv: x_adj = inp_i8 − inp_zp</span>
+<span class="cmt">//           = q07 − (−128) = q07 + 128</span>
+<span class="cmt">// range: 0+128 to 127+128 = [128, 255]</span></div>
+      </div>
+      <div class="d-card full">
+        <h3>🖼️ Tại sao FaceMesh trước khi resize?</h3>
+        <div class="nb">
+          <strong>Lý do:</strong> FaceMesh vẽ các đường landmarks mắt (trắng) lên ảnh grayscale trước khi thu nhỏ về 128×128. Khi thu nhỏ, các đường landmarks được "melt" vào texture của vùng mắt, tạo thêm feature rõ ràng để model phân biệt mắt mở/nhắm. Đây là phần preprocessing <strong>quan trọng nhất</strong> — bỏ landmarks sẽ làm accuracy giảm đáng kể. RTL engineer cần đảm bảo preprocessing pipeline giống hệt lúc training.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BLOCK 1 DEPTHWISE -->
+  <div id="layer-b1_dw" class="layer-detail">
+    <div class="detail-grid">
+      <div class="d-card hi">
+        <h3>📐 Depthwise Conv — Block 1</h3>
+        <div class="tv">
+          <div class="td"><div class="tb in">[1,128,128,1]</div><div class="tl">Input</div></div>
+          <div class="ta">→</div>
+          <div class="td"><div class="tb out">[1,128,128,1]</div><div class="tl">DW output (1 ch)</div></div>
+        </div>
+        <div class="tv">
+          <div class="td"><div class="tb w">[1, 3, 3, 1] = 9 B</div><div class="tl">DW Weight</div></div>
+        </div>
+        <div class="ir"><span class="ik">Kernel</span><span class="iv">3×3 · stride=1 · SAME padding</span></div>
+        <div class="ir"><span class="ik">Channel multiplier</span><span class="iv">1 (1 filter per input channel)</span></div>
+        <div class="ir"><span class="ik">MACs/output pixel</span><span class="iv g">3 × 3 × 1 = 9</span></div>
+        <div class="ir"><span class="ik">Total MACs</span><span class="iv g">128 × 128 × 1 × 9 = 147,456</span></div>
+        <div class="ir"><span class="ik">acc max (9 MACs)</span><span class="iv">9 × 255 × 127 = 291,105 → int32 OK</span></div>
+      </div>
+      <div class="d-card">
+        <h3>⚙️ Depthwise Conv RTL</h3>
+        <div class="fbox"><span class="cmt">// Depthwise: mỗi channel tính độc lập</span>
+<span class="cmt">// Block 1: chỉ 1 input channel</span>
+<span class="kw">for</span> or = 0..127:
+  <span class="kw">for</span> oc = 0..127:
+    <span class="vv">acc</span> = <span class="vn">0</span>  <span class="cmt">// int32</span>
+    <span class="kw">for</span> kh = 0..2:
+      <span class="kw">for</span> kw = 0..2:
+        <span class="vv">x</span> = X[or+kh-1, oc+kw-1, 0]  <span class="cmt">// int8 (SAME pad)</span>
+        <span class="vv">w</span> = DW_W[0, kh, kw, 0]       <span class="cmt">// int8</span>
+        <span class="cmt">// x_adj = x − inp_zp = x − (−128)</span>
+        <span class="vv">acc</span> += (<span class="vv">x</span> + <span class="vn">128</span>) * <span class="vk">int32</span>(<span class="vv">w</span>)
+
+    <span class="vv">acc</span> += <span class="vv">dw_bias</span>[0]
+    <span class="cmt">// requantize → DW activation int8</span>
+    <span class="vv">dw_out</span>[or,oc,0] = <span class="fn">requant</span>(<span class="vv">acc</span>, M_dw, sh_dw, zp_dw)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BLOCK 1 POINTWISE -->
+  <div id="layer-b1_pw" class="layer-detail">
+    <div class="detail-grid">
+      <div class="d-card hi">
+        <h3>📐 Pointwise Conv — Block 1</h3>
+        <div class="tv">
+          <div class="td"><div class="tb in">[1,128,128,1]</div><div class="tl">DW Output</div></div>
+          <div class="ta">→</div>
+          <div class="td"><div class="tb out">[1,128,128,32]</div><div class="tl">PW Output (pre-pool)</div></div>
+          <div class="ta">→</div>
+          <div class="td"><div class="tb out">[1,64,64,32]</div><div class="tl">Sau MaxPool</div></div>
+        </div>
+        <div class="tv">
+          <div class="td"><div class="tb w">[32, 1, 1, 1] = 32 B</div><div class="tl">PW Weight</div></div>
+          <div class="td" style="margin-left:8px"><div class="tb b">[32] × 4B = 128 B</div><div class="tl">Bias int32</div></div>
+        </div>
+        <div class="ir"><span class="ik">MACs/pixel/output ch</span><span class="iv g">1 × 1 × 1 = 1</span></div>
+        <div class="ir"><span class="ik">Total MACs (before pool)</span><span class="iv g">128 × 128 × 32 × 1 = 524,288</span></div>
+        <div class="ir"><span class="ik">BatchNorm fold</span><span class="iv c">W_fused = pw_w × γ/√(σ²+ε)</span></div>
+        <div class="ir"><span class="ik">Weight scales (per-ch)</span><span class="iv o">32 float32 scale factors</span></div>
+        <div class="ir"><span class="ik">After ReLU + Pool</span><span class="iv y">output [1,64,64,32] · int8 [0,127]</span></div>
+      </div>
+      <div class="d-card">
+        <h3>⚙️ Pointwise Conv RTL</h3>
+        <div class="fbox"><span class="cmt">// PW Conv: 1×1 kernel = dot product cross channels</span>
+<span class="kw">for</span> or = 0..127:
+  <span class="kw">for</span> oc = 0..127:
+    <span class="kw">for</span> co = 0..31:  <span class="cmt">// 32 output channels</span>
+      <span class="vv">acc</span> = <span class="vn">0</span>  <span class="cmt">// int32</span>
+      <span class="cmt">// Cin=1 trong Block 1:</span>
+      <span class="vv">x</span>   = DW_out[or, oc, 0]    <span class="cmt">// int8</span>
+      <span class="vv">w</span>   = PW_W[co, 0, 0, 0]   <span class="cmt">// int8</span>
+      <span class="vv">acc</span> = (<span class="vv">x</span> - <span class="vv">dw_out_zp</span>) * <span class="vk">int32</span>(<span class="vv">w</span>)
+
+      <span class="vv">acc</span> += pw_bias[co]
+      <span class="vv">relu_out</span>[co] = <span class="fn">relu</span>(<span class="fn">requant</span>(<span class="vv">acc</span>, M_pw[co], sh[co], zp_pw))
+
+<span class="cmt">// MaxPool sau đó: max(2×2 window)</span></div>
+        <div class="nb"><strong>BatchNorm Fold:</strong> <code>W_fused[co] = pw_w[co] × (γ[co] / √(σ²[co]+ε))</code> và <code>b_fused[co] = β[co] − γ[co]×μ[co]/√(σ²[co]+ε)</code>. Inference chỉ còn PW Conv + bias, không thêm BN op nào.</div>
+      </div>
+      <div class="d-card">
+        <h3>📏 Bit-width Analysis</h3>
+        <table class="dt">
+          <tr><th>Signal</th><th>Value</th><th>Bits</th></tr>
+          <tr><td>DW out − zp</td><td>±255</td><td><span class="tag ti32">9 bit</span></td></tr>
+          <tr><td>PW weight</td><td>±127</td><td><span class="tag ti8">int8</span></td></tr>
+          <tr><td>product (Cin=1)</td><td>±32,385</td><td><span class="tag ti32">16 bit</span></td></tr>
+          <tr><td>acc + bias</td><td>±2.1B</td><td><span class="tag ti32">int32 ✓</span></td></tr>
+          <tr><td>acc × M_int32</td><td>~2.1B × 1B</td><td><span class="tag ti64">int64 !</span></td></tr>
+          <tr><td>output ReLU</td><td>[0, 127]</td><td><span class="tag ti8">int8 ✓</span></td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- B2 DW -->
+  <div id="layer-b2_dw" class="layer-detail">
+    <div class="detail-grid">
+      <div class="d-card hi">
+        <h3>📐 Depthwise Conv — Block 2</h3>
+        <div class="tv">
+          <div class="td"><div class="tb in">[1,64,64,32]</div><div class="tl">Input từ Pool1</div></div>
+          <div class="ta">→</div>
+          <div class="td"><div class="tb out">[1,64,64,32]</div><div class="tl">DW Output</div></div>
+        </div>
+        <div class="tv"><div class="td"><div class="tb w">[32, 3, 3, 1] = 288 B</div><div class="tl">DW Weight (per ch)</div></div></div>
+        <div class="ir"><span class="ik">Kernel</span><span class="iv">3×3 · 32 channels độc lập</span></div>
+        <div class="ir"><span class="ik">MACs/pixel/channel</span><span class="iv g">3 × 3 = 9</span></div>
+        <div class="ir"><span class="ik">Total MACs (DW only)</span><span class="iv g">64 × 64 × 32 × 9 = 1,179,648</span></div>
+        <div class="ir"><span class="ik">acc max (9 MACs)</span><span class="iv">9 × 255 × 127 ≈ 291K → int32 OK</span></div>
+        <div class="ir"><span class="ik">Per-channel scale</span><span class="iv o">32 bộ (M_int32, shift) khác nhau</span></div>
+      </div>
+      <div class="d-card">
+        <h3>⚙️ Depthwise RTL — Block 2</h3>
+        <div class="fbox"><span class="cmt">// Block 2 DW: 32 channels xử lý song song/tuần tự</span>
+<span class="kw">for</span> ci = 0..31:  <span class="cmt">// mỗi channel độc lập</span>
+  <span class="kw">for</span> or, oc = 0..63:
+    <span class="vv">acc</span> = <span class="vn">0</span>
+    <span class="kw">for</span> kh,kw = 0..2:
+      <span class="vv">x</span> = X[or+kh-1, oc+kw-1, ci]
+      <span class="vv">w</span> = DW_W[ci, kh, kw, 0]
+      <span class="vv">acc</span> += (<span class="vk">int32</span>(<span class="vv">x</span>) - x_zp_prev) * <span class="vk">int32</span>(<span class="vv">w</span>)
+    <span class="vv">acc</span> += dw_bias[ci]
+    <span class="cmt">// requant per-channel: M_dw[ci], shift_dw[ci]</span>
+    <span class="vv">dw_out</span>[or,oc,ci] = <span class="fn">requant</span>(<span class="vv">acc</span>, M_dw[ci], sh[ci], zp)</div>
+        <div class="nb"><strong>Lưu ý:</strong> <code>x_zp_prev</code> là zero point của activation output từ Block 1 Pool — KHÔNG phải −128 nữa. Lấy từ tflite tensor metadata.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B2 PW -->
+  <div id="layer-b2_pw" class="layer-detail">
+    <div class="detail-grid">
+      <div class="d-card hi">
+        <h3>📐 Pointwise Conv — Block 2</h3>
+        <div class="tv">
+          <div class="td"><div class="tb in">[1,64,64,32]</div><div class="tl">DW Output</div></div>
+          <div class="ta">→</div>
+          <div class="td"><div class="tb out">[1,64,64,64]</div><div class="tl">Pre-pool</div></div>
+          <div class="ta">→</div>
+          <div class="td"><div class="tb out">[1,32,32,64]</div><div class="tl">Sau Pool</div></div>
+        </div>
+        <div class="tv">
+          <div class="td"><div class="tb w">[64,1,1,32] = 2,048 B</div><div class="tl">PW Weight</div></div>
+          <div class="td" style="margin-left:8px"><div class="tb b">[64] × 4B = 256 B</div><div class="tl">Bias int32</div></div>
+        </div>
+        <div class="ir"><span class="ik">MACs/pixel</span><span class="iv g">32 × 64 = 2,048</span></div>
+        <div class="ir"><span class="ik">Total MACs (PW only)</span><span class="iv g">64 × 64 × 2048 = 8.39M</span></div>
+        <div class="ir"><span class="ik">acc max (32 MACs)</span><span class="iv">32 × 255 × 127 ≈ 1.03M → int32 OK</span></div>
+        <div class="ir"><span class="ik">Weight scale spread</span><span class="iv o">64 float32 per-channel scales</span></div>
+      </div>
+      <div class="d-card">
+        <h3>⚙️ Pointwise RTL — Block 2</h3>
+        <div class="fbox"><span class="cmt">// PW: kết hợp 32 DW channels → 64 output channels</span>
+<span class="kw">for</span> co = 0..63:  <span class="cmt">// 64 output channels</span>
+  <span class="kw">for</span> or,oc = 0..63:
+    <span class="vv">acc</span> = <span class="vn">0</span>
+    <span class="kw">for</span> ci = 0..31:  <span class="cmt">// 32 input channels</span>
+      <span class="vv">x</span>   = DW_out[or, oc, ci]    <span class="cmt">// int8</span>
+      <span class="vv">w</span>   = PW_W[co, 0, 0, ci]   <span class="cmt">// int8</span>
+      <span class="vv">acc</span> += (<span class="vk">int32</span>(<span class="vv">x</span>) - dw_zp) * <span class="vk">int32</span>(<span class="vv">w</span>)
+
+    <span class="vv">acc</span> += pw_bias[co]
+    <span class="vv">out</span>[co] = <span class="fn">relu</span>(<span class="fn">requant</span>(<span class="vv">acc</span>, M_pw[co], sh[co], zp))
+<span class="cmt">// MaxPool 2×2 sau:</span>
+<span class="cmt">// [1,64,64,64] → [1,32,32,64]</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B3 DW (condensed) -->
+  <div id="layer-b3_dw" class="layer-detail">
+    <div class="detail-grid">
+      <div class="d-card hi">
+        <h3>📐 Depthwise Conv — Block 3</h3>
+        <div class="tv">
+          <div class="td"><div class="tb in">[1,32,32,64]</div><div class="tl">Input từ Pool2</div></div>
+          <div class="ta">→</div>
+          <div class="td"><div class="tb out">[1,32,32,64]</div><div class="tl">DW Output</div></div>
+        </div>
+        <div class="tv"><div class="td"><div class="tb w">[64, 3, 3, 1] = 576 B</div><div class="tl">DW Weight</div></div></div>
+        <div class="ir"><span class="ik">MACs/pixel/channel</span><span class="iv g">9</span></div>
+        <div class="ir"><span class="ik">Total MACs (DW)</span><span class="iv g">32 × 32 × 64 × 9 = 589,824</span></div>
+        <div class="ir"><span class="ik">acc max</span><span class="iv">9 × 255 × 127 ≈ 291K → int32 OK</span></div>
+        <div class="ir"><span class="ik">Per-channel scales</span><span class="iv o">64 bộ (M_int32, shift)</span></div>
+      </div>
+      <div class="d-card">
+        <h3>⚙️ Cấu trúc tính toán</h3>
+        <div class="fbox"><span class="cmt">// Giống Block 2 DW, nhưng Cin=64</span>
+<span class="kw">for</span> ci = 0..63:  <span class="cmt">// 64 channels</span>
+  <span class="kw">for</span> or,oc = 0..31:
+    <span class="vv">acc</span> = <span class="vn">0</span>
+    <span class="kw">for</span> kh,kw = 0..2:
+      <span class="vv">acc</span> += (X[or+kh-1,oc+kw-1,ci] - x_zp) * DW_W[ci,kh,kw,0]
+    <span class="vv">acc</span> += dw_bias[ci]
+    <span class="vv">dw_out</span>[or,oc,ci] = <span class="fn">requant</span>(<span class="vv">acc</span>, M[ci], sh[ci], zp)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B3 PW -->
+  <div id="layer-b3_pw" class="layer-detail">
+    <div class="detail-grid">
+      <div class="d-card hi">
+        <h3>📐 Pointwise Conv — Block 3 (Layer nặng thứ 1)</h3>
+        <div class="tv">
+          <div class="td"><div class="tb in">[1,32,32,64]</div><div class="tl">DW Output</div></div>
+          <div class="ta">→</div>
+          <div class="td"><div class="tb out">[1,32,32,128]</div><div class="tl">Pre-pool</div></div>
+          <div class="ta">→</div>
+          <div class="td"><div class="tb out">[1,16,16,128]</div><div class="tl">Sau Pool</div></div>
+        </div>
+        <div class="tv"><div class="td"><div class="tb w">[128,1,1,64] = 8,192 B</div><div class="tl">PW Weight</div></div></div>
+        <div class="ir"><span class="ik">MACs/pixel</span><span class="iv g">64 × 128 = 8,192</span></div>
+        <div class="ir"><span class="ik">Total MACs (PW)</span><span class="iv o">32 × 32 × 8192 = 8.39M</span></div>
+        <div class="ir"><span class="ik">acc max (64 MACs)</span><span class="iv">64 × 255 × 127 ≈ 2.07M → int32 OK</span></div>
+        <div class="ir"><span class="ik">Weight SRAM</span><span class="iv y">8 KB cho layer này</span></div>
+        <div class="ir"><span class="ik">Per-channel scales</span><span class="iv o">128 bộ (M_int32, shift)</span></div>
+      </div>
+      <div class="d-card">
+        <h3>⚙️ Công thức tính toán</h3>
+        <div class="fbox"><span class="cmt">// PW Block 3: Cin=64, Cout=128</span>
+<span class="kw">for</span> co = 0..127:
+  <span class="kw">for</span> or,oc = 0..31:
+    <span class="vv">acc</span> = <span class="vn">0</span>
+    <span class="kw">for</span> ci = 0..63:
+      <span class="vv">acc</span> += (DW_out[or,oc,ci] - dw_zp) * PW_W[co,0,0,ci]
+    <span class="vv">acc</span> += bias[co]
+    <span class="vv">out</span>[co] = <span class="fn">relu</span>(<span class="fn">requant</span>(<span class="vv">acc</span>, M_pw[co], sh[co], zp))
+
+<span class="cmt">// SRAM ROM cần cho requant params:</span>
+<span class="cmt">// 128 × (4B M_int32 + 1B shift) = 640 bytes</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B4 DW -->
+  <div id="layer-b4_dw" class="layer-detail">
+    <div class="detail-grid">
+      <div class="d-card hi">
+        <h3>📐 Depthwise Conv — Block 4 (Không MaxPool)</h3>
+        <div class="tv">
+          <div class="td"><div class="tb in">[1,16,16,128]</div><div class="tl">Input từ Pool3</div></div>
+          <div class="ta">→</div>
+          <div class="td"><div class="tb out">[1,16,16,128]</div><div class="tl">DW Output</div></div>
+        </div>
+        <div class="tv"><div class="td"><div class="tb w">[128, 3, 3, 1] = 1,152 B</div><div class="tl">DW Weight</div></div></div>
+        <div class="ir"><span class="ik">MACs/pixel/channel</span><span class="iv g">9</span></div>
+        <div class="ir"><span class="ik">Total MACs (DW)</span><span class="iv g">16 × 16 × 128 × 9 = 294,912</span></div>
+        <div class="ir"><span class="ik">Không MaxPool</span><span class="iv p">giữ nguyên 16×16 feature map</span></div>
+        <div class="ir"><span class="ik">Lý do thiết kế</span><span class="iv">16×16 đủ nhỏ để GAP sau đó xử lý</span></div>
+      </div>
+      <div class="d-card">
+        <h3>⚙️ DW Block 4</h3>
+        <div class="fbox"><span class="cmt">// Giống các DW trước, Cin=128, output=16×16</span>
+<span class="kw">for</span> ci = 0..127:  <span class="cmt">// 128 channels</span>
+  <span class="kw">for</span> or,oc = 0..15:
+    <span class="vv">acc</span> = <span class="vn">0</span>
+    <span class="kw">for</span> kh,kw = 0..2:
+      <span class="vv">acc</span> += (X[or+kh-1,oc+kw-1,ci] - x_zp) * DW_W[ci,kh,kw,0]
+    <span class="vv">acc</span> += dw_bias[ci]
+    <span class="vv">dw_out</span>[or,oc,ci] = <span class="fn">requant</span>(<span class="vv">acc</span>, M[ci], sh[ci], zp)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B4 PW -->
+  <div id="layer-b4_pw" class="layer-detail">
+    <div class="detail-grid">
+      <div class="d-card hi">
+        <h3>📐 Pointwise Conv — Block 4 (Layer nặng thứ 2)</h3>
+        <div class="tv">
+          <div class="td"><div class="tb in">[1,16,16,128]</div><div class="tl">DW Output</div></div>
+          <div class="ta">→</div>
+          <div class="td"><div class="tb out">[1,16,16,128]</div><div class="tl">PW Output · Không Pool</div></div>
+        </div>
+        <div class="tv"><div class="td"><div class="tb w">[128,1,1,128] = 16,384 B</div><div class="tl">PW Weight — NẶNG NHẤT</div></div></div>
+        <div class="ir"><span class="ik">MACs/pixel</span><span class="iv o">128 × 128 = 16,384</span></div>
+        <div class="ir"><span class="ik">Total MACs (PW)</span><span class="iv o">16 × 16 × 16384 = 4.19M</span></div>
+        <div class="ir"><span class="ik">Weight SRAM</span><span class="iv y">16 KB — layer lớn nhất</span></div>
+        <div class="ir"><span class="ik">acc max (128 MACs)</span><span class="iv">128 × 255 × 127 ≈ 4.14M → int32 OK</span></div>
+        <div class="ir"><span class="ik">Output sau ReLU</span><span class="iv g">[1,16,16,128] · int8 [0,127] → vào GAP</span></div>
+      </div>
+      <div class="d-card">
+        <h3>⚙️ PW Block 4 + handoff to GAP</h3>
+        <div class="fbox"><span class="cmt">// PW Block 4: Cin=128, Cout=128</span>
+<span class="kw">for</span> co = 0..127:
+  <span class="kw">for</span> or,oc = 0..15:
+    <span class="vv">acc</span> = <span class="vn">0</span>
+    <span class="kw">for</span> ci = 0..127:
+      <span class="vv">acc</span> += (DW_out[or,oc,ci] - dw_zp) * PW_W[co,0,0,ci]
+    <span class="vv">acc</span> += bias[co]
+    <span class="cmt">// ReLU + requant → [0,127]</span>
+    <span class="vv">out</span>[or,oc,co] = <span class="fn">relu</span>(<span class="fn">requant</span>(<span class="vv">acc</span>, M[co], sh[co], zp))
+
+<span class="cmt">// Tổng weight SRAM Block 4 PW:</span>
+<span class="cmt">// 128 × 128 = 16,384 bytes = 16 KB</span></div>
+        <div class="nb"><strong>Bottleneck:</strong> Block 4 PW có weight lớn nhất (16 KB). Cân nhắc double-buffering để stream weight từ off-chip SRAM khi cần.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAXPOOL -->
+  <div id="layer-pool" class="layer-detail">
+    <div class="detail-grid">
+      <div class="d-card hi">
+        <h3>📐 MaxPool 2×2 — Blocks 1, 2, 3 (không có ở Block 4)</h3>
+        <div class="ir"><span class="ik">Pool size</span><span class="iv">2×2</span></div>
+        <div class="ir"><span class="ik">Stride</span><span class="iv">2 (non-overlapping)</span></div>
+        <div class="ir"><span class="ik">Padding</span><span class="iv">VALID (no padding)</span></div>
+        <div class="ir"><span class="ik">Operation</span><span class="iv g">max(a, b, c, d) — 3 signed comparisons</span></div>
+        <div class="ir"><span class="ik">Requantization cần không?</span><span class="iv g">KHÔNG — scale/ZP không đổi</span></div>
+        <div class="ir"><span class="ik">Kích thước thay đổi</span><span class="iv">128→64, 64→32, 32→16 (HW), C giữ nguyên</span></div>
+        <div class="ir"><span class="ik">Hardware</span><span class="iv">4 signed comparators, 1 mux tree</span></div>
+      </div>
+      <div class="d-card">
+        <h3>⚙️ MaxPool RTL</h3>
+        <div class="fbox"><span class="cmt">// MaxPool 2×2 stride=2 — signed int8</span>
+<span class="kw">for</span> ch = 0..C-1:
+  <span class="kw">for</span> or = 0..H/2-1:
+    <span class="kw">for</span> oc = 0..W/2-1:
+      <span class="vv">a</span> = X[2*or,   2*oc,   ch]
+      <span class="vv">b</span> = X[2*or,   2*oc+1, ch]
+      <span class="vv">c</span> = X[2*or+1, 2*oc,   ch]
+      <span class="vv">d</span> = X[2*or+1, 2*oc+1, ch]
+
+      <span class="cmt">// Signed comparison</span>
+      <span class="vv">ab</span> = ($signed(<span class="vv">a</span>) > $signed(<span class="vv">b</span>)) ? <span class="vv">a</span> : <span class="vv">b</span>
+      <span class="vv">cd</span> = ($signed(<span class="vv">c</span>) > $signed(<span class="vv">d</span>)) ? <span class="vv">c</span> : <span class="vv">d</span>
+      Y[or,oc,ch] = ($signed(<span class="vv">ab</span>) > $signed(<span class="vv">cd</span>)) ? <span class="vv">ab</span> : <span class="vv">cd</span>
+
+<span class="cmt">// Scale/ZP truyền thẳng qua không đổi</span>
+<span class="cmt">// KHÔNG cần requantization</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GAP -->
+  <div id="layer-gap" class="layer-detail">
+    <div class="detail-grid">
+      <div class="d-card hi">
+        <h3>📐 Global Average Pooling — 16×16 → 1</h3>
+        <div class="tv">
+          <div class="td"><div class="tb in">[1, 16, 16, 128]</div><div class="tl">Input từ Block 4</div></div>
+          <div class="ta">→</div>
+          <div class="td"><div class="tb out">[1, 128]</div><div class="tl">Feature vector</div></div>
+        </div>
+        <div class="ir"><span class="ik">Operation</span><span class="iv g">mean(H×W) per channel = sum ÷ 256</span></div>
+        <div class="ir"><span class="ik">Pixels per channel</span><span class="iv">16 × 16 = 256 additions</span></div>
+        <div class="ir"><span class="ik">Division</span><span class="iv c">÷ 256 = arithmetic right shift 8</span></div>
+        <div class="ir"><span class="ik">Accumulator width</span><span class="iv">256 × 127 = 32,512 → 15-bit sum, int32 safe</span></div>
+        <div class="ir"><span class="ik">Output requant</span><span class="iv o">cần 1 bộ (M_gap, shift_gap, zp_gap)</span></div>
+        <div class="ir"><span class="ik">Lý do dùng GAP thay Flatten</span><span class="iv">16×16×128 = 32,768 vs 128 → tiết kiệm FC weight</span></div>
+      </div>
+      <div class="d-card">
+        <h3>⚙️ GAP RTL</h3>
+        <div class="fbox"><span class="cmt">// GAP: sum 16×16 = 256 pixels mỗi channel</span>
+<span class="cmt">// Nếu dùng TFLite average_pool, kết quả float trước requant</span>
+<span class="kw">for</span> ch = 0..127:
+  <span class="vv">sum</span> = <span class="vn">0</span>  <span class="cmt">// int32 (hoặc int16 vì max = 32,512)</span>
+  <span class="kw">for</span> or = 0..15:
+    <span class="kw">for</span> oc = 0..15:
+      <span class="vv">sum</span> += <span class="kw">int32</span>(X[or, oc, ch])  <span class="cmt">// int8 accumulate</span>
+
+  <span class="cmt">// Chia 256 = shift right 8 (integer average)</span>
+  <span class="vv">avg_q</span> = <span class="vv">sum</span> >>> <span class="vn">8</span>
+
+  <span class="cmt">// Requantize nếu scale thay đổi</span>
+  <span class="vv">gap_out</span>[ch] = <span class="fn">requant</span>(<span class="vv">avg_q</span>, M_gap[ch], sh_gap, zp_gap)</div>
+        <div class="nb"><strong>Hardware tip:</strong> GAP có thể pipeline song song với PW conv cuối nếu dùng kiến trúc output-stationary. 128 adder trees (mỗi cây 256 lá) hoặc 1 adder + 256 cycles × 128 channels.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FC1 -->
+  <div id="layer-fc1" class="layer-detail">
+    <div class="detail-grid">
+      <div class="d-card hi">
+        <h3>📐 Dense FC1 — 128 → 32 + ReLU</h3>
+        <div class="tv">
+          <div class="td"><div class="tb in">[1, 128]</div><div class="tl">GAP output</div></div>
+          <div class="ta">→</div>
+          <div class="td"><div class="tb out">[1, 32]</div><div class="tl">FC1 output</div></div>
+        </div>
+        <div class="tv">
+          <div class="td"><div class="tb w">[32, 128] = 4,096 B</div><div class="tl">Weight (int8)</div></div>
+          <div class="td" style="margin-left:8px"><div class="tb b">[32] × 4B = 128 B</div><div class="tl">Bias (int32)</div></div>
+        </div>
+        <div class="ir"><span class="ik">MACs total</span><span class="iv g">128 × 32 = 4,096</span></div>
+        <div class="ir"><span class="ik">acc max (128 MACs)</span><span class="iv">128 × 255 × 127 ≈ 4.14M → int32 OK</span></div>
+        <div class="ir"><span class="ik">Activation</span><span class="iv g">ReLU → output [0, 127]</span></div>
+        <div class="ir"><span class="ik">Per-channel scales</span><span class="iv o">32 bộ (M_int32, shift)</span></div>
+        <div class="ir"><span class="ik">Weight SRAM</span><span class="iv y">4 KB + 128 B bias ROM</span></div>
+      </div>
+      <div class="d-card">
+        <h3>⚙️ FC1 RTL (GEMV)</h3>
+        <div class="fbox"><span class="cmt">// FC = General Matrix-Vector product</span>
+<span class="kw">for</span> co = 0..31:  <span class="cmt">// 32 output neurons</span>
+  <span class="vv">acc</span> = <span class="vn">0</span>  <span class="cmt">// int32</span>
+  <span class="kw">for</span> ci = 0..127:  <span class="cmt">// 128 input features</span>
+    <span class="vv">x</span> = gap_out[ci]    <span class="cmt">// int8</span>
+    <span class="vv">w</span> = W_fc1[co, ci]  <span class="cmt">// int8</span>
+    <span class="vv">acc</span> += (<span class="kw">int32</span>(<span class="vv">x</span>) - gap_zp) * <span class="kw">int32</span>(<span class="vv">w</span>)
+
+  <span class="vv">acc</span> += bias_fc1[co]
+  <span class="cmt">// requant + ReLU per output neuron</span>
+  <span class="vv">fc1_out</span>[co] = <span class="fn">relu</span>(<span class="fn">requant</span>(<span class="vv">acc</span>, M_fc1[co], sh[co], zp_fc1))</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FC2 -->
+  <div id="layer-fc2" class="layer-detail">
+    <div class="detail-grid">
+      <div class="d-card hi">
+        <h3>📐 Dense FC2 — 32 → 1 (Logit, No Activation)</h3>
+        <div class="tv">
+          <div class="td"><div class="tb in">[1, 32]</div><div class="tl">FC1 output</div></div>
+          <div class="ta">→</div>
+          <div class="td"><div class="tb out">[1, 1]</div><div class="tl">Raw logit</div></div>
+        </div>
+        <div class="tv">
+          <div class="td"><div class="tb w">[1, 32] = 32 B</div><div class="tl">Weight (int8)</div></div>
+          <div class="td" style="margin-left:8px"><div class="tb b">[1] = 4 B</div><div class="tl">Bias (int32)</div></div>
+        </div>
+        <div class="ir"><span class="ik">MACs total</span><span class="iv g">32 × 1 = 32</span></div>
+        <div class="ir"><span class="ik">Activation</span><span class="iv p">KHÔNG CÓ — raw logit</span></div>
+        <div class="ir"><span class="ik">Output scale</span><span class="iv o">≈ 0.0665</span></div>
+        <div class="ir"><span class="ik">Output ZP</span><span class="iv o">−2</span></div>
+        <div class="ir"><span class="ik">float logit</span><span class="iv c">(int8_out − zp) × 0.0665</span></div>
+        <div class="ir"><span class="ik">prob_active</span><span class="iv">σ(logit) = 1/(1+e^−logit)</span></div>
+      </div>
+      <div class="d-card">
+        <h3>⚙️ FC2 RTL + Output decode</h3>
+        <div class="fbox"><span class="cmt">// FC2: 32→1 dot product</span>
+<span class="vv">acc</span> = <span class="vn">0</span>
+<span class="kw">for</span> ci = 0..31:
+  <span class="vv">acc</span> += (<span class="kw">int32</span>(fc1_out[ci]) - fc1_zp) * <span class="kw">int32</span>(W_fc2[0, ci])
+<span class="vv">acc</span> += bias_fc2[0]
+<span class="vv">out_i8</span> = <span class="fn">requant</span>(<span class="vv">acc</span>, M_fc2, sh_fc2, zp=-2)
+
+<span class="cmt">// Decode logit (không cần FPU):</span>
+<span class="cmt">// logit = (out_i8 − (−2)) × 0.0665</span>
+<span class="cmt">// logit > 0 → sigmoid > 0.5 → ACTIVE</span>
+<span class="cmt">// logit < 0 → sigmoid < 0.5 → FATIGUE</span>
+
+<span class="cmt">// ASIC: chỉ cần 1 signed comparison!</span>
+<span class="kw">assign</span> fatigue = ($signed(out_i8) < $signed(-<span class="vn">8'sd2</span>));
+<span class="kw">assign</span> active  = ~fatigue;
+
+<span class="cmt">// zp=−2 nên threshold = −2 (zero logit)</span></div>
+        <div class="nb"><strong>Không cần sigmoid trên ASIC.</strong> Vì logit > 0 ↔ sigmoid(logit) > 0.5, chỉ cần so sánh <code>out_i8 > zp_out</code>. Với zp=−2 thì threshold là <code>out_i8 > −2</code>.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OUTPUT -->
+  <div id="layer-output" class="layer-detail">
+    <div class="detail-grid">
+      <div class="d-card hi">
+        <h3>📐 Output Interpretation</h3>
+        <div class="ir"><span class="ik">int8 output range</span><span class="iv">[−128, 127]</span></div>
+        <div class="ir"><span class="ik">Scale</span><span class="iv o">≈ 0.0665 float/LSB</span></div>
+        <div class="ir"><span class="ik">Zero point</span><span class="iv o">−2</span></div>
+        <div class="ir"><span class="ik">float logit = </span><span class="iv c">(int8 − (−2)) × 0.0665</span></div>
+        <div class="ir"><span class="ik">int8 = −2 → logit</span><span class="iv">0.0 → prob = 0.50</span></div>
+        <div class="ir"><span class="ik">int8 = −71 → logit</span><span class="iv">−4.6 → prob = 0.01 → FATIGUE</span></div>
+        <div class="ir"><span class="ik">int8 = +93 → logit</span><span class="iv">+6.3 → prob = 0.998 → ACTIVE</span></div>
+        <div class="ir"><span class="ik">ASIC decision</span><span class="iv g">out_i8 > −2 → ACTIVE, ≤ −2 → FATIGUE</span></div>
+      </div>
+      <div class="d-card">
+        <h3>⚙️ ASIC Classifier (No FPU)</h3>
+        <div class="fbox"><span class="cmt">// Không cần sigmoid — chỉ signed comparison</span>
+<span class="kw">localparam</span> signed [7:0] ZP_OUT = -<span class="vn">8'sd2</span>;
+
+<span class="cmt">// ACTIVE: logit > 0 ↔ out_i8 > ZP_OUT</span>
+<span class="kw">assign</span> active  = ($signed(out_i8) > $signed(ZP_OUT));
+<span class="kw">assign</span> fatigue = ~active;
+
+<span class="cmt">// Confidence (tùy chọn, dùng LUT 8-bit → sigmoid_approx):</span>
+<span class="cmt">// prob_q = sigmoid_lut[out_i8 + 128]  // 256-entry ROM</span>
+<span class="cmt">// Kết quả: 8-bit fixed-point prob</span>
+
+<span class="cmt">// Drowsiness guard (state machine, N frames liên tục):</span>
+<span class="kw">always</span> @(<span class="kw">posedge</span> clk) <span class="kw">begin</span>
+  <span class="kw">if</span> (fatigue) fatigue_cnt &lt;= fatigue_cnt + <span class="vn">1</span>;
+  <span class="kw">else</span>         fatigue_cnt &lt;= <span class="vn">0</span>;
+  alert &lt;= (fatigue_cnt >= DROWSY_FRAMES);  <span class="cmt">// e.g. 15 frames@30fps=0.5s</span>
+<span class="kw">end</span></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /tab-detail -->
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     TAB 3 — DATAPATH PE
+══════════════════════════════════════════════════════════════════════ -->
+<div id="tab-datapath" class="panel">
+
+  <div class="dp-section">
+    <h2>Processing Element — Integer-Only Inference Datapath</h2>
+
+    <div class="pe-diagram">
+      <!-- Row 1 -->
+      <div class="pe-row">
+        <div class="pe-box inp-b"><div class="pb-name">x (int8)</div><div class="pb-sub">activation input</div></div>
+        <div class="pe-arr"><div class="pe-arr-line"></div><div class="pe-arr-lbl">x − zp</div></div>
+        <div class="pe-box sub-b"><div class="pb-name">Subtract ZP</div><div class="pb-sub">9-bit signed</div></div>
+        <div class="pe-arr"><div class="pe-arr-line"></div><div class="pe-arr-lbl">x_adj</div></div>
+        <div class="pe-box mac-b"><div class="pb-name">MAC Unit</div><div class="pb-sub">int8 × int9 → int32</div></div>
+        <div class="pe-arr"><div class="pe-arr-line"></div><div class="pe-arr-lbl">product</div></div>
+        <div class="pe-box acc-b"><div class="pb-name">Accumulator</div><div class="pb-sub">int32 adder</div></div>
+      </div>
+
+      <div style="display:flex; justify-content:center; margin: 4px 0; gap: 160px">
+        <div></div>
+        <div class="pe-v-arr"></div>
+      </div>
+
+      <div class="pe-row" style="flex-direction:row-reverse">
+        <div class="pe-box inp-b"><div class="pb-name">w (int8)</div><div class="pb-sub">weight from SRAM</div></div>
+        <div class="pe-arr" style="transform:scaleX(-1)"><div class="pe-arr-line"></div><div class="pe-arr-lbl">weight</div></div>
+        <div class="pe-box relu-b"><div class="pb-name">ReLU</div><div class="pb-sub">clip 0..127</div></div>
+        <div class="pe-arr" style="transform:scaleX(-1)"><div class="pe-arr-line"></div><div class="pe-arr-lbl">relu_out</div></div>
+        <div class="pe-box req-b"><div class="pb-name">Requantizer</div><div class="pb-sub">int32 → int8</div></div>
+        <div class="pe-arr" style="transform:scaleX(-1)"><div class="pe-arr-line"></div><div class="pe-arr-lbl">+bias</div></div>
+        <div class="pe-box bias-b"><div class="pb-name">+ Bias</div><div class="pb-sub">int32 adder</div></div>
+      </div>
+    </div>
+
+    <div class="detail-grid" style="margin-top:20px">
+      <div class="d-card">
+        <h3>📐 Bit-width toàn datapath</h3>
+        <table class="dt">
+          <tr><th>Signal</th><th>Max value</th><th>Type</th></tr>
+          <tr><td>input x</td><td>[−128, 127]</td><td><span class="tag ti8">int8</span></td></tr>
+          <tr><td>x − zp</td><td>[−255, 255]</td><td><span class="tag ti32">9-bit</span></td></tr>
+          <tr><td>weight w</td><td>[−127, 127]</td><td><span class="tag ti8">int8</span></td></tr>
+          <tr><td>product</td><td>±32,385</td><td><span class="tag ti32">17-bit</span></td></tr>
+          <tr><td>acc (9 MACs max)</td><td>≈ ±291K</td><td><span class="tag ti32">int32 ✓</span></td></tr>
+          <tr><td>acc (128 MACs max)</td><td>≈ ±4.14M</td><td><span class="tag ti32">int32 ✓</span></td></tr>
+          <tr><td>+ bias (int32)</td><td>±2.1B</td><td><span class="tag ti32">int32 ✓</span></td></tr>
+          <tr><td>acc × M_int32</td><td>~4.14M × 2.1B</td><td><span class="tag ti64">int64 !</span></td></tr>
+          <tr><td>output ReLU</td><td>[0, 127]</td><td><span class="tag ti8">int8 ✓</span></td></tr>
+        </table>
+      </div>
+
+      <div class="d-card">
+        <h3>⚙️ Requantization Formula</h3>
+        <div class="fbox"><span class="cmt">// M_float = S_in × S_weight / S_out  (per output channel)</span>
+<span class="cmt">// Decompose: M_float = M_int32 × 2^(−total_shift)</span>
+
+<span class="cmt">// Tìm total_shift:</span>
+<span class="vv">n</span>        = floor(log2(M_float)) + 31  <span class="cmt">// so that M_int32 ~ 2^31</span>
+<span class="vv">M_int32</span>  = round(M_float × 2^<span class="vv">n</span>)     <span class="cmt">// int32, MSB near 1</span>
+<span class="vv">tot_shift</span>= <span class="vv">n</span>                           <span class="cmt">// range typically 30-45</span>
+
+<span class="cmt">// Hardware implementation:</span>
+<span class="vv">scaled</span>  = $signed(<span class="vv">acc</span>) * $signed(<span class="vv">M_int32</span>)  <span class="cmt">// 64-bit</span>
+<span class="vv">shifted</span> = $signed(<span class="vv">scaled</span>) >>> <span class="vv">tot_shift</span>    <span class="cmt">// arithmetic</span>
+<span class="vv">with_zp</span> = <span class="vv">shifted</span> + <span class="vv">zp_out</span>                  <span class="cmt">// add output ZP</span>
+<span class="vv">out_q</span>   = clip(<span class="vv">with_zp</span>, -<span class="vn">128</span>, <span class="vn">127</span>)         <span class="cmt">// saturate int8</span></div>
+      </div>
+
+      <div class="d-card">
+        <h3>🗃️ Memory Architecture</h3>
+        <table class="dt">
+          <tr><th>Buffer</th><th>Size</th><th>Loại</th></tr>
+          <tr><td>Input frame SRAM</td><td>16,384 B (16 KB)</td><td><span class="tag ti8">int8</span></td></tr>
+          <tr><td>Feature map A (ping)</td><td>max 32,768 B (32 KB)</td><td><span class="tag ti8">int8</span></td></tr>
+          <tr><td>Feature map B (pong)</td><td>max 32,768 B (32 KB)</td><td><span class="tag ti8">int8</span></td></tr>
+          <tr><td>Weight SRAM B4 PW</td><td>16,384 B (16 KB)</td><td><span class="tag ti8">int8</span></td></tr>
+          <tr><td>Weight SRAM B3 PW</td><td>8,192 B (8 KB)</td><td><span class="tag ti8">int8</span></td></tr>
+          <tr><td>Bias ROM (tất cả layer)</td><td>≈ 1,600 B</td><td><span class="tag ti32">int32</span></td></tr>
+          <tr><td>Requant params ROM</td><td>≈ 800 B</td><td><span class="tag tf32">float/int</span></td></tr>
+        </table>
+      </div>
+
+      <div class="d-card">
+        <h3>📊 MAC Count per Layer</h3>
+        <table class="dt">
+          <tr><th>Layer</th><th>Op</th><th>MACs</th><th>% tổng</th></tr>
+          <tr><td>Block 1 DW</td><td>DW 3×3</td><td>147K</td><td>0.01%</td></tr>
+          <tr><td>Block 1 PW</td><td>PW 1×1</td><td>524K</td><td>0.03%</td></tr>
+          <tr><td>Block 2 DW</td><td>DW 3×3</td><td>1.18M</td><td>0.06%</td></tr>
+          <tr><td>Block 2 PW</td><td>PW 1×1</td><td>8.39M</td><td>0.44%</td></tr>
+          <tr><td>Block 3 DW</td><td>DW 3×3</td><td>590K</td><td>0.03%</td></tr>
+          <tr><td>Block 3 PW</td><td>PW 1×1</td><td style="color:var(--orange)">838M</td><td style="color:var(--orange)">44%</td></tr>
+          <tr><td>Block 4 DW</td><td>DW 3×3</td><td>295K</td><td>0.02%</td></tr>
+          <tr><td>Block 4 PW</td><td>PW 1×1</td><td style="color:var(--orange)">1,006M</td><td style="color:var(--orange)">53%</td></tr>
+          <tr><td>GAP</td><td>avg pool</td><td>32,768</td><td>&lt;0.01%</td></tr>
+          <tr><td>FC1+FC2</td><td>GEMV</td><td>4,128</td><td>&lt;0.01%</td></tr>
+        </table>
+        <div class="nb" style="margin-top:10px"><strong>97% MACs</strong> nằm ở Block 3 và 4 PW. Tối ưu 2 layer này là ưu tiên hàng đầu.</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /tab-datapath -->
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     TAB 4 — RTL / VERILOG
+══════════════════════════════════════════════════════════════════════ -->
+<div id="tab-rtl" class="panel">
+
+  <div class="rtl-section">
+    <h2>Module 1 — MAC Unit (int8 × int9 → int32 accumulate)</h2>
+    <div class="vcode"><span class="vc">// MAC unit: 1 multiply-accumulate step</span>
+<span class="vc">// x_adj = x − zp (9-bit); w = weight (8-bit)</span>
+<span class="vk">module</span> <span class="vf">mac_unit</span> (
+  <span class="vk">input</span>  <span class="vk">wire</span>              clk, rst, en,
+  <span class="vk">input</span>  <span class="vk">wire</span> signed [7:0]  weight,      <span class="vc">// int8 weight</span>
+  <span class="vk">input</span>  <span class="vk">wire</span> signed [7:0]  x_in,        <span class="vc">// int8 activation</span>
+  <span class="vk">input</span>  <span class="vk">wire</span> signed [7:0]  inp_zp,      <span class="vc">// zero point (signed)</span>
+  <span class="vk">output</span> <span class="vk">reg</span>  signed [31:0] acc          <span class="vc">// int32 accumulator</span>
+);
+  <span class="vc">// x_adj: 9-bit to avoid overflow when zp=−128 → x+128 = [0,255]</span>
+  <span class="vk">wire</span> signed [8:0]  x_adj   = {1'b0, x_in} - {{1{inp_zp[7]}}, inp_zp}; <span class="vc">// 9-bit</span>
+  <span class="vk">wire</span> signed [16:0] product = $signed(weight) * x_adj;                   <span class="vc">// 17-bit</span>
+
+  <span class="vk">always</span> @(<span class="vk">posedge</span> clk) <span class="vk">begin</span>
+    <span class="vk">if</span>      (rst) acc &lt;= <span class="vn">32'sd0</span>;
+    <span class="vk">else if</span> (en)  acc &lt;= acc + {{15{product[16]}}, product}; <span class="vc">// sign-extend to 32-bit</span>
+  <span class="vk">end</span>
+<span class="vk">endmodule</span></div>
+  </div>
+
+  <div class="rtl-section">
+    <h2>Module 2 — Requantizer (int32 → int8, per-channel)</h2>
+    <div class="vcode"><span class="vc">// Requantizer: (acc + bias) × M_int32 >> shift + zp_out → int8</span>
+<span class="vk">module</span> <span class="vf">requantizer</span> #(
+  <span class="vk">parameter</span>        [31:0] M_INT32     = <span class="vn">32'd765562943</span>,  <span class="vc">// từ tflite metadata</span>
+  <span class="vk">parameter</span>        [5:0]  TOTAL_SHIFT = <span class="vn">6'd39</span>,           <span class="vc">// typically 30..45</span>
+  <span class="vk">parameter</span> signed [7:0]  OUT_ZP      = -<span class="vn">8'sd2</span>           <span class="vc">// output zero point</span>
+) (
+  <span class="vk">input</span>  <span class="vk">wire</span> signed [31:0] acc_biased,  <span class="vc">// acc + bias (int32)</span>
+  <span class="vk">input</span>  <span class="vk">wire</span>               use_relu,    <span class="vc">// 1=Conv/FC1, 0=FC2</span>
+  <span class="vk">output</span> <span class="vk">wire</span> signed [7:0]  out_q        <span class="vc">// int8 result</span>
+);
+  <span class="vc">// 64-bit multiply — MUST be int64 to avoid overflow</span>
+  <span class="vk">wire</span> signed [63:0] scaled  = $signed(acc_biased) * $signed(M_INT32);
+  <span class="vk">wire</span> signed [31:0] shifted = $signed(scaled) >>> TOTAL_SHIFT;
+  <span class="vk">wire</span> signed [31:0] with_zp = shifted + $signed(OUT_ZP);
+
+  <span class="vc">// Saturate to int8</span>
+  <span class="vk">wire</span> signed [7:0] clipped = (with_zp >  <span class="vn">127</span>) ?  <span class="vn">8'sd127</span> :
+                              (with_zp < -<span class="vn">128</span>) ? -<span class="vn">8'sd128</span> :
+                               with_zp[7:0];
+  <span class="vc">// ReLU: if negative → 0 (only for Conv and FC1 layers)</span>
+  <span class="vk">assign</span> out_q = (use_relu && clipped[7]) ? <span class="vn">8'd0</span> : clipped;
+<span class="vk">endmodule</span></div>
+  </div>
+
+  <div class="rtl-section">
+    <h2>Module 3 — Depthwise Conv Controller</h2>
+    <div class="vcode"><span class="vc">// DW Conv 3×3 SAME: mỗi channel tính độc lập</span>
+<span class="vc">// Dùng chung 1 mac_unit + address generator</span>
+<span class="vk">module</span> <span class="vf">depthwise_conv</span> #(
+  <span class="vk">parameter</span> IN_CH = <span class="vn">32</span>,   <span class="vc">// input channels</span>
+  <span class="vk">parameter</span> IH    = <span class="vn">64</span>,   <span class="vc">// input height (sau pool)</span>
+  <span class="vk">parameter</span> IW    = <span class="vn">64</span>    <span class="vc">// input width</span>
+) (
+  <span class="vk">input</span>  <span class="vk">wire</span>        clk, rst, start,
+  <span class="vk">input</span>  <span class="vk">wire</span> signed [7:0] x_in,      <span class="vc">// streamed pixel</span>
+  <span class="vk">input</span>  <span class="vk">wire</span> signed [7:0] w_in,      <span class="vc">// DW weight</span>
+  <span class="vk">input</span>  <span class="vk">wire</span> signed [7:0] x_zp,      <span class="vc">// zero point từ prev layer</span>
+  <span class="vk">output</span> <span class="vk">reg</span>  signed [7:0] out_q,     <span class="vc">// requantized output</span>
+  <span class="vk">output</span> <span class="vk">reg</span>              valid
+);
+  <span class="vc">// Line buffer: cần 2 rows + 3 pixels (for SAME 3×3)</span>
+  <span class="vc">// Với IW=64: line_buf[2][64+2] → 130 int8 bytes per channel</span>
+  <span class="vk">reg</span> signed [7:0] line_buf [0:1][0:IW+1];
+
+  <span class="vc">// ... address generator, sliding window logic ...</span>
+  <span class="vc">// MAC 9 cycles per output pixel, then requantize</span>
+<span class="vk">endmodule</span></div>
+  </div>
+
+  <div class="rtl-section">
+    <h2>Module 4 — MaxPool 2×2 (Signed Int8)</h2>
+    <div class="vcode"><span class="vc">// MaxPool 2×2 stride=2 — KHÔNG cần requantization</span>
+<span class="vk">module</span> <span class="vf">maxpool2x2</span> (
+  <span class="vk">input</span>  <span class="vk">wire</span> signed [7:0] a, b, c, d,  <span class="vc">// 4 pixels of 2×2 window</span>
+  <span class="vk">output</span> <span class="vk">wire</span> signed [7:0] y             <span class="vc">// max value, same scale/ZP</span>
+);
+  <span class="vk">wire</span> signed [7:0] ab = ($signed(a) > $signed(b)) ? a : b;
+  <span class="vk">wire</span> signed [7:0] cd = ($signed(c) > $signed(d)) ? c : d;
+  <span class="vk">assign</span> y = ($signed(ab) > $signed(cd)) ? ab : cd;
+  <span class="vc">// Scale và ZP giữ nguyên — pass-through metadata</span>
+<span class="vk">endmodule</span></div>
+  </div>
+
+  <div class="rtl-section">
+    <h2>Module 5 — GAP 16×16 (Global Average Pool)</h2>
+    <div class="vcode"><span class="vc">// GAP: sum 16×16=256 pixels, divide by 256 = >>8</span>
+<span class="vk">module</span> <span class="vf">gap_16x16</span> (
+  <span class="vk">input</span>  <span class="vk">wire</span>              clk, rst, en, last_pixel,
+  <span class="vk">input</span>  <span class="vk">wire</span> signed [7:0]  pixel_in,  <span class="vc">// 1 pixel per cycle</span>
+  <span class="vk">output</span> <span class="vk">reg</span>  signed [7:0]  avg_out,   <span class="vc">// int8 average</span>
+  <span class="vk">output</span> <span class="vk">reg</span>               valid
+);
+  <span class="vc">// 16×16=256 pixels × max 127 = 32,512 → 15-bit sum, use int32</span>
+  <span class="vk">reg</span> signed [31:0] sum;
+
+  <span class="vk">always</span> @(<span class="vk">posedge</span> clk) <span class="vk">begin</span>
+    <span class="vk">if</span>  (rst)         <span class="vk">begin</span> sum &lt;= <span class="vn">0</span>; valid &lt;= <span class="vn">0</span>; <span class="vk">end</span>
+    <span class="vk">else if</span> (last_pixel) <span class="vk">begin</span>
+      <span class="vc">// Final pixel: add then divide by 256 = >>8</span>
+      avg_out &lt;= $signed(sum + pixel_in) >>> <span class="vn">8</span>;
+      valid   &lt;= <span class="vn">1</span>;
+      sum     &lt;= <span class="vn">0</span>;
+    <span class="vk">end</span>
+    <span class="vk">else if</span> (en) <span class="vk">begin</span>
+      sum   &lt;= sum + pixel_in;
+      valid &lt;= <span class="vn">0</span>;
+    <span class="vk">end</span>
+  <span class="vk">end</span>
+<span class="vk">endmodule</span>
+<span class="vc">// Instantiate 128× (1 per channel) hoặc time-multiplex 1 module × 128 channels</span></div>
+  </div>
+
+  <div class="rtl-section">
+    <h2>Module 6 — Drowsiness Classifier (No FPU)</h2>
+    <div class="vcode"><span class="vc">// Không cần sigmoid! Chỉ cần compare int8 vs ZP</span>
+<span class="vc">// Thresholds cho softmax alternatives:</span>
+<span class="vc">//   logit = 0   → out_i8 = ZP_OUT = −2  → sigmoid = 0.5</span>
+<span class="vc">//   logit > 0   → out_i8 > −2           → ACTIVE</span>
+<span class="vc">//   logit < 0   → out_i8 < −2           → FATIGUE</span>
+<span class="vc">//</span>
+<span class="vc">// Drowsy guard: yêu cầu FATIGUE liên tục N frames</span>
+<span class="vk">module</span> <span class="vf">drowsiness_classifier</span> #(
+  <span class="vk">parameter</span> signed [7:0] ZP_OUT     = -<span class="vn">8'sd2</span>,
+  <span class="vk">parameter</span>       [15:0] GUARD_N    = <span class="vn">16'd15</span>   <span class="vc">// 15 frames @ 30fps ≈ 0.5s</span>
+) (
+  <span class="vk">input</span>  <span class="vk">wire</span>        clk, rst, frame_valid,
+  <span class="vk">input</span>  <span class="vk">wire</span> signed [7:0] out_i8,
+  <span class="vk">output</span> <span class="vk">reg</span>         fatigue_alert,
+  <span class="vk">output</span> <span class="vk">wire</span>        is_fatigue    <span class="vc">// raw per-frame</span>
+);
+  <span class="vk">assign</span> is_fatigue = ($signed(out_i8) <= $signed(ZP_OUT));
+
+  <span class="vk">reg</span> [15:0] cnt;
+  <span class="vk">always</span> @(<span class="vk">posedge</span> clk) <span class="vk">begin</span>
+    <span class="vk">if</span> (rst) <span class="vk">begin</span> cnt &lt;= <span class="vn">0</span>; fatigue_alert &lt;= <span class="vn">0</span>; <span class="vk">end</span>
+    <span class="vk">else if</span> (frame_valid) <span class="vk">begin</span>
+      <span class="vk">if</span> (is_fatigue) <span class="vk">begin</span>
+        cnt           &lt;= (cnt < GUARD_N) ? cnt + <span class="vn">1</span> : cnt;
+        fatigue_alert &lt;= (cnt >= GUARD_N - <span class="vn">1</span>);
+      <span class="vk">end else begin</span>
+        cnt           &lt;= <span class="vn">0</span>;
+        fatigue_alert &lt;= <span class="vn">0</span>;
+      <span class="vk">end</span>
+    <span class="vk">end</span>
+  <span class="vk">end</span>
+<span class="vk">endmodule</span></div>
+  </div>
+
+</div><!-- /tab-rtl -->
+
+</div><!-- /wrapper -->
+
+<script>
+function switchTab(name, el) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  el.classList.add('active');
+}
+
+function showLayer(id, btn) {
+  document.querySelectorAll('.layer-detail').forEach(d => d.classList.remove('active-detail'));
+  document.querySelectorAll('.lbtn').forEach(b => b.classList.remove('sel'));
+  const el = document.getElementById('layer-' + id);
+  if (el) el.classList.add('active-detail');
+  btn.classList.add('sel');
+}
+
+function showDetailFromFlow(layerId) {
+  // Switch to detail tab
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-detail').classList.add('active');
+  document.querySelectorAll('.tab')[1].classList.add('active');
+
+  // Show the layer
+  document.querySelectorAll('.layer-detail').forEach(d => d.classList.remove('active-detail'));
+  document.querySelectorAll('.lbtn').forEach(b => b.classList.remove('sel'));
+  const el = document.getElementById('layer-' + layerId);
+  if (el) el.classList.add('active-detail');
+
+  // Sync button
+  document.querySelectorAll('.lbtn').forEach(b => {
+    if (b.getAttribute('onclick') && b.getAttribute('onclick').includes("'" + layerId + "'")) {
+      b.classList.add('sel');
+    }
+  });
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+</script>
+</body>
+</html>

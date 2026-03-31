@@ -1,0 +1,6 @@
+python .\model\algo_verify.py --model model/drowsiness_asic_int8.tflite --image model/your_photo.jpg --out algo_verify_output/
+python .\model\algo_verify_me.py --model model/drowsiness_asic_int8_me.tflite --image model/your_photo.jpg --out algo_verify_me_output/
+
+
+
+python .\model\realtime_cam.py --model .\model\drowsiness_asic_int8.tflite

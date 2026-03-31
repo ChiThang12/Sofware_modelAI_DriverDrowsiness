@@ -1,3 +1,0 @@
-// drowsiness_asic/quant_output/MatMul;drowsiness_asic/quant_output/LastValueQuant/FakeQuantWithMinMaxVars — shaped view
-// Shape: [1, 32]
-// out[  0]:  109   56  -95 -104  -23   30    7  -93  -72  119   -4  125  -82   10   98   62  -75   75   63   85  -47   16   11 -127  122 -112  -26  110  -55   40  -45   17

@@ -1,0 +1,1832 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASIC Drowsiness — Pipeline Guide</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --bg:       #07090f;
+  --bg2:      #0c1018;
+  --bg3:      #111622;
+  --bg4:      #161e2e;
+  --border:   #1c2840;
+  --border2:  #243354;
+  --cyan:     #00e5ff;
+  --violet:   #7c5cfc;
+  --green:    #00ffaa;
+  --orange:   #ff7240;
+  --yellow:   #ffd060;
+  --pink:     #ff4d8d;
+  --blue:     #4d94ff;
+  --red:      #ff4444;
+  --text:     #dce8f5;
+  --textdim:  #4a6080;
+  --textmid:  #8aa0bf;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', sans-serif;
+  min-height: 100vh;
+  display: flex;
+}
+
+/* Grid bg */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(rgba(0,229,255,0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,229,255,0.018) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none; z-index: 0;
+}
+
+/* ═══════════ SIDEBAR ═══════════ */
+.sidebar {
+  width: 260px; min-height: 100vh;
+  background: var(--bg2); border-right: 1px solid var(--border);
+  position: fixed; top: 0; left: 0; z-index: 100;
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+}
+
+.sidebar-logo {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-logo h2 {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.15em;
+  text-transform: uppercase; color: var(--cyan);
+}
+.sidebar-logo p {
+  font-size: 0.68rem; color: var(--textdim); margin-top: 4px;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.sidebar-section {
+  padding: 12px 0 4px 20px;
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem;
+  font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--textdim);
+}
+
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 20px; cursor: pointer;
+  font-size: 0.78rem; color: var(--textmid);
+  transition: all 0.15s; border-left: 2px solid transparent;
+  text-decoration: none;
+}
+.nav-item:hover { color: var(--cyan); background: rgba(0,229,255,0.04); }
+.nav-item.active {
+  color: var(--cyan); border-left-color: var(--cyan);
+  background: rgba(0,229,255,0.07);
+}
+.nav-icon { font-size: 0.85rem; width: 18px; text-align: center; flex-shrink: 0; }
+.nav-badge {
+  margin-left: auto; font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.58rem; padding: 2px 6px; border-radius: 2px;
+  background: rgba(0,229,255,0.1); color: var(--cyan); border: 1px solid rgba(0,229,255,0.2);
+}
+
+.sidebar-progress {
+  margin: 16px 20px; padding: 12px;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+}
+.sp-title {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.62rem;
+  color: var(--textdim); letter-spacing: 0.1em; margin-bottom: 8px;
+}
+.sp-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-bottom: 6px; }
+.sp-fill { height: 100%; background: linear-gradient(90deg, var(--cyan), var(--violet)); transition: width 0.4s; }
+.sp-text { font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; color: var(--textmid); }
+
+/* ═══════════ MAIN ═══════════ */
+.main {
+  margin-left: 260px; flex: 1;
+  position: relative; z-index: 1;
+  max-width: calc(100vw - 260px);
+}
+
+/* ═══════════ SECTION PAGES ═══════════ */
+.page { display: none; min-height: 100vh; }
+.page.active { display: block; }
+
+/* ═══════════ TOP BAR ═══════════ */
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(7,9,15,0.92);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 36px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.topbar-breadcrumb {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; color: var(--textdim);
+}
+.topbar-breadcrumb span { color: var(--cyan); }
+.topbar-actions { display: flex; gap: 8px; }
+.btn-sm {
+  padding: 6px 14px; border-radius: 4px; border: 1px solid var(--border);
+  background: var(--bg2); color: var(--textmid); cursor: pointer;
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem;
+  transition: all 0.15s; font-weight: 600;
+}
+.btn-sm:hover { border-color: var(--cyan); color: var(--cyan); }
+.btn-sm.primary { background: var(--cyan); color: #000; border-color: var(--cyan); }
+.btn-sm.primary:hover { opacity: 0.85; }
+
+/* ═══════════ CONTENT ═══════════ */
+.content { padding: 36px 36px 80px; max-width: 1100px; }
+
+.page-header {
+  margin-bottom: 36px; padding-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+.page-header .phase-tag {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.62rem;
+  font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--cyan); margin-bottom: 10px;
+  display: flex; align-items: center; gap: 8px;
+}
+.phase-tag::before {
+  content: ''; width: 24px; height: 2px;
+  background: var(--cyan); flex-shrink: 0;
+}
+.page-header h1 {
+  font-size: 1.9rem; font-weight: 700; letter-spacing: -0.02em;
+  color: var(--text); line-height: 1.2; margin-bottom: 10px;
+}
+.page-header p {
+  font-size: 0.88rem; color: var(--textmid); line-height: 1.6; max-width: 680px;
+}
+
+/* Status badges */
+.status {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 3px; font-size: 0.68rem;
+  font-family: 'IBM Plex Mono', monospace; font-weight: 700; letter-spacing: 0.05em;
+}
+.status-local   { background: rgba(77,148,255,0.12); color: var(--blue);   border: 1px solid rgba(77,148,255,0.25); }
+.status-colab   { background: rgba(255,114,64,0.12); color: var(--orange); border: 1px solid rgba(255,114,64,0.25); }
+.status-output  { background: rgba(0,255,170,0.10); color: var(--green);  border: 1px solid rgba(0,255,170,0.22); }
+.status-warning { background: rgba(255,208,96,0.10); color: var(--yellow); border: 1px solid rgba(255,208,96,0.22); }
+.status-error   { background: rgba(255,68,68,0.10);  color: var(--red);   border: 1px solid rgba(255,68,68,0.22); }
+
+/* Cards */
+.card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 22px; margin-bottom: 16px;
+}
+.card.accent-cyan { border-top: 3px solid var(--cyan); }
+.card.accent-violet { border-top: 3px solid var(--violet); }
+.card.accent-green { border-top: 3px solid var(--green); }
+.card.accent-orange { border-top: 3px solid var(--orange); }
+.card.accent-yellow { border-top: 3px solid var(--yellow); }
+.card.accent-red { border-top: 3px solid var(--red); }
+
+.card-title {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem;
+  font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+}
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) {
+  .grid2, .grid3 { grid-template-columns: 1fr; }
+}
+
+/* Info rows */
+.ir { display: flex; justify-content: space-between; align-items: baseline;
+  padding: 7px 0; border-bottom: 1px solid rgba(28,40,64,0.6); }
+.ir:last-child { border-bottom: none; }
+.ik { color: var(--textdim); font-size: 0.78rem; }
+.iv { font-family: 'IBM Plex Mono', monospace; font-size: 0.76rem; color: var(--text); }
+.iv.g { color: var(--green); }
+.iv.o { color: var(--orange); }
+.iv.y { color: var(--yellow); }
+.iv.c { color: var(--cyan); }
+.iv.p { color: var(--pink); }
+.iv.r { color: var(--red); }
+
+/* Code blocks */
+.codeblock {
+  background: #030609; border: 1px solid var(--border);
+  border-radius: 6px; padding: 16px 18px;
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.74rem;
+  line-height: 1.85; overflow-x: auto; position: relative;
+}
+.codeblock .cm { color: #2d4060; }
+.codeblock .kw { color: var(--violet); font-weight: 600; }
+.codeblock .st { color: var(--yellow); }
+.codeblock .nm { color: var(--orange); }
+.codeblock .fn { color: var(--green); }
+.codeblock .hl { color: var(--cyan); }
+
+.copy-btn {
+  position: absolute; top: 10px; right: 10px;
+  padding: 4px 10px; border-radius: 3px; border: 1px solid var(--border);
+  background: var(--bg3); color: var(--textdim); cursor: pointer;
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.62rem;
+  transition: all 0.15s;
+}
+.copy-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.copy-btn.copied { border-color: var(--green); color: var(--green); }
+
+/* Note boxes */
+.note { border-left: 3px solid; border-radius: 0 5px 5px 0;
+  padding: 12px 16px; margin: 12px 0; font-size: 0.8rem; line-height: 1.6; }
+.note strong { display: block; margin-bottom: 4px; font-size: 0.75rem;
+  font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.05em; }
+.note.info  { border-color: var(--cyan);   background: rgba(0,229,255,0.04);  color: var(--textmid); }
+.note.info strong  { color: var(--cyan); }
+.note.warn  { border-color: var(--yellow); background: rgba(255,208,96,0.05); color: var(--textmid); }
+.note.warn strong  { color: var(--yellow); }
+.note.err   { border-color: var(--red);    background: rgba(255,68,68,0.05);  color: var(--textmid); }
+.note.err strong   { color: var(--red); }
+.note.ok    { border-color: var(--green);  background: rgba(0,255,170,0.05);  color: var(--textmid); }
+.note.ok strong    { color: var(--green); }
+
+/* Pipeline flow */
+.pipeline-flow {
+  display: flex; gap: 0; align-items: stretch;
+  overflow-x: auto; padding-bottom: 4px; margin: 24px 0;
+}
+.pf-step {
+  display: flex; flex-direction: column;
+  min-width: 120px; flex: 1; cursor: pointer;
+}
+.pf-box {
+  flex: 1; padding: 14px 12px; border: 1px solid var(--border);
+  border-top: 3px solid; text-align: center;
+  transition: all 0.2s; position: relative;
+  background: var(--bg2);
+}
+.pf-box:hover, .pf-step.active .pf-box {
+  filter: brightness(1.3); transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.pf-step:not(:last-child) .pf-box::after {
+  content: '→';
+  position: absolute; right: -14px; top: 50%; transform: translateY(-50%);
+  color: var(--textdim); font-size: 0.8rem; z-index: 2;
+}
+.pf-num {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.58rem;
+  font-weight: 700; letter-spacing: 0.12em; margin-bottom: 6px;
+}
+.pf-name { font-size: 0.78rem; font-weight: 700; line-height: 1.2; margin-bottom: 4px; }
+.pf-file {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem;
+  opacity: 0.7; margin-top: 6px;
+}
+.pf-where {
+  text-align: center; padding: 4px; font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.58rem; letter-spacing: 0.08em;
+}
+
+/* Steps */
+.step-list { display: flex; flex-direction: column; gap: 10px; }
+.step-item {
+  display: flex; gap: 14px; align-items: flex-start;
+  background: rgba(0,0,0,0.2); border-radius: 6px; padding: 14px 16px;
+  border: 1px solid var(--border);
+}
+.step-num {
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.7rem; font-weight: 700; font-family: 'IBM Plex Mono', monospace;
+}
+.step-body { flex: 1; }
+.step-title { font-size: 0.84rem; font-weight: 700; margin-bottom: 4px; }
+.step-desc { font-size: 0.78rem; color: var(--textmid); line-height: 1.5; }
+.step-code {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem;
+  background: rgba(0,0,0,0.4); padding: 6px 10px; border-radius: 4px;
+  color: var(--cyan); margin-top: 8px; display: block;
+}
+
+/* Checklist */
+.checklist { display: flex; flex-direction: column; gap: 6px; }
+.check-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 12px; border-radius: 5px;
+  border: 1px solid var(--border); background: var(--bg3);
+  cursor: pointer; transition: all 0.15s;
+}
+.check-item:hover { border-color: var(--border2); }
+.check-item.done { border-color: rgba(0,255,170,0.25); background: rgba(0,255,170,0.03); }
+.check-box {
+  width: 18px; height: 18px; border-radius: 3px; flex-shrink: 0;
+  border: 1.5px solid var(--border2); display: flex; align-items: center;
+  justify-content: center; font-size: 0.7rem; transition: all 0.15s;
+  margin-top: 1px;
+}
+.check-item.done .check-box { border-color: var(--green); background: rgba(0,255,170,0.15); color: var(--green); }
+.check-text { font-size: 0.8rem; color: var(--textmid); line-height: 1.4; }
+.check-item.done .check-text { color: var(--textdim); text-decoration: line-through; }
+
+/* Table */
+.dt { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+.dt th {
+  background: var(--bg3); color: var(--textdim); padding: 9px 14px;
+  text-align: left; font-weight: 600; letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem;
+}
+.dt td {
+  padding: 8px 14px; border-bottom: 1px solid rgba(28,40,64,0.5);
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem;
+}
+.dt tr:hover td { background: rgba(255,255,255,0.015); }
+.dt tr:last-child td { border-bottom: none; }
+
+/* Conversion visualizer */
+.conv-vis {
+  display: flex; align-items: center; gap: 0;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden; margin: 12px 0;
+}
+.cv-box {
+  flex: 1; padding: 14px; text-align: center;
+  border-right: 1px solid var(--border);
+}
+.cv-box:last-child { border-right: none; }
+.cv-label { font-size: 0.6rem; color: var(--textdim); letter-spacing: 0.1em;
+  text-transform: uppercase; font-family: 'IBM Plex Mono', monospace; margin-bottom: 6px; }
+.cv-val { font-family: 'IBM Plex Mono', monospace; font-size: 1.1rem; font-weight: 700; }
+.cv-sub { font-size: 0.65rem; color: var(--textdim); margin-top: 4px; font-family: 'IBM Plex Mono', monospace; }
+.cv-op { font-size: 1.2rem; color: var(--textdim); display: flex; align-items: center; padding: 0 8px; flex-shrink: 0; }
+
+/* Accuracy meter */
+.acc-meter { margin: 12px 0; }
+.acc-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.acc-label { font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; color: var(--textmid); width: 160px; flex-shrink: 0; }
+.acc-bar-wrap { flex: 1; height: 8px; background: var(--bg3); border-radius: 4px; overflow: hidden; }
+.acc-bar { height: 100%; border-radius: 4px; transition: width 1s ease; }
+.acc-pct { font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; color: var(--text); width: 48px; text-align: right; flex-shrink: 0; }
+
+/* State machine */
+.sm-states { display: flex; gap: 16px; margin: 16px 0; flex-wrap: wrap; }
+.sm-state {
+  flex: 1; min-width: 160px; padding: 16px; border-radius: 8px; border: 2px solid;
+  text-align: center;
+}
+.sm-state .ss-icon { font-size: 1.6rem; margin-bottom: 8px; }
+.sm-state .ss-name { font-weight: 700; font-size: 0.9rem; margin-bottom: 6px; }
+.sm-state .ss-cond { font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; opacity: 0.8; }
+
+/* File tree */
+.file-tree { font-family: 'IBM Plex Mono', monospace; font-size: 0.76rem; line-height: 2; }
+.ft-dir { color: var(--cyan); }
+.ft-file { color: var(--textmid); }
+.ft-file.out { color: var(--green); }
+.ft-comment { color: var(--textdim); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--cyan); }
+
+/* Page transitions */
+.page { animation: fadeIn 0.2s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Tooltip */
+[data-tip] { position: relative; cursor: help; }
+[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+  background: var(--bg4); border: 1px solid var(--border2);
+  color: var(--text); font-size: 0.68rem; padding: 6px 10px; border-radius: 4px;
+  white-space: nowrap; z-index: 999; pointer-events: none;
+  font-family: 'IBM Plex Mono', monospace;
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <h2>ASIC Drowsiness</h2>
+    <p>Pipeline Guide v1.0</p>
+  </div>
+
+  <div class="sidebar-section">Tổng quan</div>
+  <a class="nav-item active" onclick="showPage('overview', this)">
+    <span class="nav-icon">🏠</span> Giới thiệu
+  </a>
+  <a class="nav-item" onclick="showPage('files', this)">
+    <span class="nav-icon">📁</span> Cấu trúc file
+  </a>
+
+  <div class="sidebar-section">Local Pipeline</div>
+  <a class="nav-item" onclick="showPage('config', this)">
+    <span class="nav-icon">⚙️</span> config_asic.py
+    <span class="nav-badge">B1</span>
+  </a>
+  <a class="nav-item" onclick="showPage('preprocessing', this)">
+    <span class="nav-icon">🖼️</span> preprocessing_asic.py
+    <span class="nav-badge">B2</span>
+  </a>
+  <a class="nav-item" onclick="showPage('preprocess_data', this)">
+    <span class="nav-icon">🔄</span> preprocess_data_asic.py
+    <span class="nav-badge">B3</span>
+  </a>
+  <a class="nav-item" onclick="showPage('split', this)">
+    <span class="nav-icon">✂️</span> split_data_asic.py
+    <span class="nav-badge">B4</span>
+  </a>
+  <a class="nav-item" onclick="showPage('runall', this)">
+    <span class="nav-icon">🚀</span> run_all_asic.py
+    <span class="nav-badge">B5</span>
+  </a>
+
+  <div class="sidebar-section">Google Colab</div>
+  <a class="nav-item" onclick="showPage('colab_load', this)">
+    <span class="nav-icon">☁️</span> Load & Convert Data
+    <span class="nav-badge">C1</span>
+  </a>
+  <a class="nav-item" onclick="showPage('colab_model', this)">
+    <span class="nav-icon">🧠</span> Build Model
+    <span class="nav-badge">C2</span>
+  </a>
+  <a class="nav-item" onclick="showPage('colab_train', this)">
+    <span class="nav-icon">📈</span> Float32 Training
+    <span class="nav-badge">C3</span>
+  </a>
+  <a class="nav-item" onclick="showPage('colab_qat', this)">
+    <span class="nav-icon">🔬</span> QAT Fine-tuning
+    <span class="nav-badge">C4</span>
+  </a>
+  <a class="nav-item" onclick="showPage('colab_export', this)">
+    <span class="nav-icon">📦</span> INT8 Export & Verify
+    <span class="nav-badge">C5</span>
+  </a>
+
+  <div class="sidebar-section">Deploy</div>
+  <a class="nav-item" onclick="showPage('realtime', this)">
+    <span class="nav-icon">📷</span> Realtime Inference
+  </a>
+  <a class="nav-item" onclick="showPage('asic_notes', this)">
+    <span class="nav-icon">🔧</span> ASIC RTL Notes
+  </a>
+  <a class="nav-item" onclick="showPage('errors', this)">
+    <span class="nav-icon">🚨</span> Lỗi thường gặp
+  </a>
+  <a class="nav-item" onclick="showPage('checklist', this)">
+    <span class="nav-icon">✅</span> Checklist
+  </a>
+
+  <div class="sidebar-progress">
+    <div class="sp-title">TIẾN ĐỘ PIPELINE</div>
+    <div class="sp-bar"><div class="sp-fill" id="progress-bar" style="width:0%"></div></div>
+    <div class="sp-text" id="progress-text">0 / 8 bước hoàn thành</div>
+  </div>
+</nav>
+
+<!-- ═══════════════════ MAIN ═══════════════════ -->
+<main class="main">
+
+<!-- ═══ PAGE: OVERVIEW ═══ -->
+<div id="page-overview" class="page active">
+  <div class="topbar">
+    <div class="topbar-breadcrumb">ASIC Drowsiness / <span>Tổng quan</span></div>
+    <div class="topbar-actions">
+      <button class="btn-sm primary" onclick="showPage('config', document.querySelector('[onclick*=\"config\"]'))">Bắt đầu →</button>
+    </div>
+  </div>
+  <div class="content">
+    <div class="page-header">
+      <div class="phase-tag">PIPELINE OVERVIEW</div>
+      <h1>ASIC Driver Drowsiness<br>Detection Pipeline</h1>
+      <p>Hướng dẫn đầy đủ quy trình từ tiền xử lý dataset đến xuất model INT8 TFLite tối ưu cho ASIC hardware — không cần FPU, chỉ dùng phép tính số nguyên.</p>
+    </div>
+
+    <!-- Pipeline flow -->
+    <div class="card">
+      <div class="card-title" style="color:var(--cyan)">📊 TOÀN BỘ PIPELINE</div>
+      <div class="pipeline-flow">
+        <div class="pf-step" onclick="showPage('config', null)">
+          <div class="pf-box" style="border-top-color:var(--blue)">
+            <div class="pf-num" style="color:var(--blue)">B1</div>
+            <div class="pf-name" style="color:var(--blue)">Config</div>
+            <div class="pf-file">config_asic.py</div>
+          </div>
+          <div class="pf-where" style="color:var(--blue)">💻 LOCAL</div>
+        </div>
+        <div class="pf-step" onclick="showPage('preprocessing', null)">
+          <div class="pf-box" style="border-top-color:var(--cyan)">
+            <div class="pf-num" style="color:var(--cyan)">B2</div>
+            <div class="pf-name" style="color:var(--cyan)">Preprocessing</div>
+            <div class="pf-file">preprocessing_asic.py</div>
+          </div>
+          <div class="pf-where" style="color:var(--cyan)">💻 LOCAL</div>
+        </div>
+        <div class="pf-step" onclick="showPage('preprocess_data', null)">
+          <div class="pf-box" style="border-top-color:var(--violet)">
+            <div class="pf-num" style="color:var(--violet)">B3</div>
+            <div class="pf-name" style="color:var(--violet)">Batch Process</div>
+            <div class="pf-file">preprocess_data_asic.py</div>
+          </div>
+          <div class="pf-where" style="color:var(--violet)">💻 LOCAL</div>
+        </div>
+        <div class="pf-step" onclick="showPage('split', null)">
+          <div class="pf-box" style="border-top-color:var(--pink)">
+            <div class="pf-num" style="color:var(--pink)">B4</div>
+            <div class="pf-name" style="color:var(--pink)">Split Data</div>
+            <div class="pf-file">split_data_asic.py</div>
+          </div>
+          <div class="pf-where" style="color:var(--pink)">💻 LOCAL</div>
+        </div>
+        <div class="pf-step" onclick="showPage('colab_train', null)">
+          <div class="pf-box" style="border-top-color:var(--orange)">
+            <div class="pf-num" style="color:var(--orange)">C1</div>
+            <div class="pf-name" style="color:var(--orange)">Float32 Train</div>
+            <div class="pf-file">Colab Step 6</div>
+          </div>
+          <div class="pf-where" style="color:var(--orange)">☁️ COLAB</div>
+        </div>
+        <div class="pf-step" onclick="showPage('colab_qat', null)">
+          <div class="pf-box" style="border-top-color:var(--yellow)">
+            <div class="pf-num" style="color:var(--yellow)">C2</div>
+            <div class="pf-name" style="color:var(--yellow)">QAT Fine-tune</div>
+            <div class="pf-file">Colab Step 7</div>
+          </div>
+          <div class="pf-where" style="color:var(--yellow)">☁️ COLAB</div>
+        </div>
+        <div class="pf-step" onclick="showPage('colab_export', null)">
+          <div class="pf-box" style="border-top-color:var(--green)">
+            <div class="pf-num" style="color:var(--green)">C3</div>
+            <div class="pf-name" style="color:var(--green)">INT8 Export</div>
+            <div class="pf-file">Colab Step 8</div>
+          </div>
+          <div class="pf-where" style="color:var(--green)">☁️ COLAB</div>
+        </div>
+        <div class="pf-step" onclick="showPage('realtime', null)">
+          <div class="pf-box" style="border-top-color:var(--cyan)">
+            <div class="pf-num" style="color:var(--cyan)">D1</div>
+            <div class="pf-name" style="color:var(--cyan)">Deploy</div>
+            <div class="pf-file">realtime_cam.py</div>
+          </div>
+          <div class="pf-where" style="color:var(--cyan)">🚗 DEPLOY</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid3" style="margin-top:20px">
+      <div class="card accent-cyan">
+        <div class="card-title" style="color:var(--cyan)">🎯 MỤC TIÊU ASIC</div>
+        <div class="ir"><span class="ik">Datapath</span><span class="iv c">Integer-only (int8/int32)</span></div>
+        <div class="ir"><span class="ik">FPU needed</span><span class="iv g">Không</span></div>
+        <div class="ir"><span class="ik">Input</span><span class="iv">128×128×1 · Q0.7</span></div>
+        <div class="ir"><span class="ik">Accuracy drop</span><span class="iv g">< 2% vs float32</span></div>
+        <div class="ir"><span class="ik">Model size</span><span class="iv y">~260 KB (int8)</span></div>
+      </div>
+      <div class="card accent-orange">
+        <div class="card-title" style="color:var(--orange)">⚡ YÊU CẦU CÀI ĐẶT</div>
+        <div class="codeblock" style="font-size:0.68rem;padding:10px 14px">pip install opencv-python mediapipe numpy scikit-learn tqdm</div>
+        <div style="margin-top:8px;font-size:0.75rem;color:var(--textmid)">Cài local trước khi chạy pipeline. Colab cần thêm tensorflow-model-optimization.</div>
+      </div>
+      <div class="card accent-green">
+        <div class="card-title" style="color:var(--green)">📦 OUTPUT CUỐI</div>
+        <div class="ir"><span class="ik">drowsiness_asic_int8.tflite</span><span class="iv g">ASIC model</span></div>
+        <div class="ir"><span class="ik">asic_weights.h</span><span class="iv g">C header</span></div>
+        <div class="ir"><span class="ik">base_weights.h5</span><span class="iv">Float32 ckpt</span></div>
+        <div class="ir"><span class="ik">qat_weights.h5</span><span class="iv">QAT ckpt</span></div>
+        <div class="ir"><span class="ik">training_history.png</span><span class="iv">Report</span></div>
+      </div>
+    </div>
+
+    <div class="note info" style="margin-top:20px">
+      <strong>💡 Cách dùng tài liệu này</strong>
+      Click vào từng mục trong sidebar trái để xem chi tiết từng bước. Mỗi trang có code mẫu, giải thích ý nghĩa tham số, và lưu ý quan trọng. Sidebar hiển thị tiến độ chạy pipeline.
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: FILES ═══ -->
+<div id="page-files" class="page">
+  <div class="topbar">
+    <div class="topbar-breadcrumb">ASIC Drowsiness / <span>Cấu trúc file</span></div>
+  </div>
+  <div class="content">
+    <div class="page-header">
+      <div class="phase-tag">FILE STRUCTURE</div>
+      <h1>Cấu Trúc File & Vai Trò</h1>
+      <p>Mỗi file có trách nhiệm riêng trong pipeline. Thứ tự chạy quan trọng.</p>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="card-title" style="color:var(--blue)">💻 LOCAL FILES (chạy trước)</div>
+        <div class="file-tree">
+<span class="ft-dir">ProjectRoot/</span>
+├── <span class="ft-file">config_asic.py</span>        <span class="ft-comment">← Cấu hình trung tâm</span>
+├── <span class="ft-file">preprocessing_asic.py</span> <span class="ft-comment">← Hàm xử lý ảnh đơn</span>
+├── <span class="ft-file">preprocess_data_asic.py</span><span class="ft-comment">← Batch processing</span>
+├── <span class="ft-file">split_data_asic.py</span>    <span class="ft-comment">← Train/Test split</span>
+├── <span class="ft-file">run_all_asic.py</span>       <span class="ft-comment">← Master script</span>
+│
+<span class="ft-dir">FaceImages/</span>
+├── <span class="ft-dir">ActiveSubjects/</span>        <span class="ft-comment">← Ảnh tỉnh táo (label 1)</span>
+└── <span class="ft-dir">FatigueSubjects/</span>       <span class="ft-comment">← Ảnh buồn ngủ (label 0)</span>
+│
+<span class="ft-dir">ModelAiFinal/PreprocessedData_ASIC/</span>
+├── <span class="ft-file out">X_preprocessed_asic.npy</span>  <span class="ft-comment">← Cache</span>
+├── <span class="ft-file out">y_preprocessed_asic.npy</span>  <span class="ft-comment">← Cache</span>
+├── <span class="ft-file out">X_train_asic.npy</span>
+├── <span class="ft-file out">X_test_asic.npy</span>
+├── <span class="ft-file out">y_train_asic.npy</span>
+└── <span class="ft-file out">y_test_asic.npy</span>          <span class="ft-comment">← Upload 4 file này lên Drive</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--orange)">☁️ GOOGLE COLAB + OUTPUT</div>
+        <div class="file-tree">
+<span class="ft-dir">Google Drive/Colab Notebooks/DriverDrowsiness/</span>
+│
+<span class="ft-dir">PreprocessedData_ASIC/</span>       <span class="ft-comment">← Upload 4 file .npy vào đây</span>
+├── X_train_asic.npy
+├── X_test_asic.npy
+├── y_train_asic.npy
+└── y_test_asic.npy
+│
+<span class="ft-dir">Models/</span>                          <span class="ft-comment">← Colab tự tạo</span>
+├── <span class="ft-file out">base_weights.weights.h5</span>
+├── <span class="ft-file out">qat_weights.weights.h5</span>
+├── <span class="ft-file out">_tmp_base.weights.h5</span>       <span class="ft-comment">← Temp, có thể xóa</span>
+├── <span class="ft-file out">drowsiness_asic_int8.tflite</span> <span class="ft-comment">← File quan trọng nhất</span>
+├── <span class="ft-file out">asic_weights.h</span>             <span class="ft-comment">← Cho RTL engineer</span>
+└── <span class="ft-file out">training_history.png</span>
+        </div>
+        <div class="note info" style="margin-top:12px">
+          <strong>📤 Upload thứ tự</strong>
+          Chạy local pipeline xong → upload 4 file X_train/X_test/y_train/y_test _asic.npy lên Drive → chạy Colab
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-title" style="color:var(--cyan)">📋 VAI TRÒ TỪNG FILE</div>
+      <table class="dt">
+        <thead><tr><th>File</th><th>Import bởi</th><th>Chức năng chính</th><th>Output</th></tr></thead>
+        <tbody>
+          <tr><td style="color:var(--cyan)">config_asic.py</td><td>Tất cả file khác</td><td>Cấu hình đường dẫn, tham số ASIC, Q0.7</td><td>Biến global</td></tr>
+          <tr><td style="color:var(--cyan)">preprocessing_asic.py</td><td>preprocess_data_asic.py, run_all</td><td>Hàm xử lý ảnh đơn: grayscale, resize, Q0.7</td><td>Hàm utility</td></tr>
+          <tr><td style="color:var(--violet)">preprocess_data_asic.py</td><td>run_all_asic.py</td><td>Load dataset + MediaPipe + batch process</td><td>X/y _preprocessed.npy</td></tr>
+          <tr><td style="color:var(--pink)">split_data_asic.py</td><td>run_all_asic.py</td><td>Stratified 80/20 split, verify format</td><td>4 file _train/_test.npy</td></tr>
+          <tr><td style="color:var(--green)">run_all_asic.py</td><td>—</td><td>Master script: check deps → preprocess → split → verify</td><td>Tất cả .npy files</td></tr>
+          <tr><td style="color:var(--orange)">driver_drowsiness_final.py</td><td>Google Colab</td><td>Load .npy → train → QAT → export TFLite INT8</td><td>.tflite, .h5, .h, .png</td></tr>
+          <tr><td style="color:var(--blue)">realtime_cam.py</td><td>Deploy</td><td>Inference realtime webcam + state machine</td><td>Alert output</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: CONFIG ═══ -->
+<div id="page-config" class="page">
+  <div class="topbar">
+    <div class="topbar-breadcrumb">Local Pipeline / <span>config_asic.py</span></div>
+    <div class="topbar-actions">
+      <span class="status status-local">💻 LOCAL</span>
+    </div>
+  </div>
+  <div class="content">
+    <div class="page-header">
+      <div class="phase-tag">BƯỚC 1 · LOCAL</div>
+      <h1>config_asic.py</h1>
+      <p>File cấu hình trung tâm. Được import bởi tất cả các file khác. Thay đổi ở đây ảnh hưởng toàn bộ pipeline. Cần chỉnh đường dẫn trước khi chạy.</p>
+    </div>
+
+    <div class="note warn">
+      <strong>⚠️ Việc đầu tiên cần làm</strong>
+      Mở config_asic.py, sửa <code style="color:var(--cyan);font-family:monospace">BASE_DIR</code> thành đường dẫn thực tế trên máy bạn trước khi chạy bất cứ script nào khác.
+    </div>
+
+    <div class="grid2">
+      <div class="card accent-cyan">
+        <div class="card-title" style="color:var(--cyan)">📂 PATH CONFIGURATION</div>
+        <div class="codeblock"><span class="cm"># Chỉnh sửa theo máy của bạn</span>
+<span class="hl">BASE_DIR</span>   = <span class="st">r"D:\PROJECTDriverDrowsiness"</span>
+<span class="hl">ACTIVE_DIR</span> = BASE_DIR + <span class="st">"/FaceImages/ActiveSubjects"</span>
+<span class="hl">FATIGUE_DIR</span>= BASE_DIR + <span class="st">"/FaceImages/FatigueSubjects"</span>
+<span class="hl">OUTPUT_DIR</span> = BASE_DIR + <span class="st">"/ModelAiFinal/PreprocessedData_ASIC"</span></div>
+        <button class="copy-btn" onclick="copyCode(this)">copy</button>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--violet)">🔢 ĐỊNH DẠNG Q0.7 FIXED-POINT</div>
+        <div class="ir"><span class="ik">IMG_SIZE</span><span class="iv c">128 (= 2^7)</span></div>
+        <div class="ir"><span class="ik">FIXED_POINT_FRAC_BITS</span><span class="iv c">7</span></div>
+        <div class="ir"><span class="ik">SCALE_FACTOR</span><span class="iv c">128 (= 2^7)</span></div>
+        <div class="ir"><span class="ik">QUANTIZATION_BITS</span><span class="iv">8</span></div>
+        <div class="ir"><span class="ik">QUANTIZATION_MIN/MAX</span><span class="iv">−128 / 127</span></div>
+        <div class="ir"><span class="ik">TEST_SIZE</span><span class="iv">0.20 (20%)</span></div>
+        <div class="ir"><span class="ik">SEED</span><span class="iv">42</span></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title" style="color:var(--yellow)">🔬 GIẢI THÍCH Q0.7 FIXED-POINT</div>
+      <p style="font-size:0.8rem;color:var(--textmid);margin-bottom:14px">Q0.7 là định dạng số thực dấu phẩy tĩnh: <strong>0 bit phần nguyên</strong>, <strong>7 bit phần thập phân</strong> trong kiểu int8 (8-bit có dấu). Ý nghĩa: giá trị float = int8_value / 2^7 = int8_value / 128.</p>
+      <div class="conv-vis">
+        <div class="cv-box">
+          <div class="cv-label">uint8 pixel</div>
+          <div class="cv-val" style="color:var(--blue)">200</div>
+          <div class="cv-sub">Camera output</div>
+        </div>
+        <div class="cv-op">→</div>
+        <div class="cv-box" style="background:rgba(0,229,255,0.05)">
+          <div class="cv-label">BIT SHIFT RIGHT 1</div>
+          <div class="cv-val" style="color:var(--cyan)">&gt;&gt; 1</div>
+          <div class="cv-sub">Hardware: 1 cycle!</div>
+        </div>
+        <div class="cv-op">→</div>
+        <div class="cv-box">
+          <div class="cv-label">int8 Q0.7</div>
+          <div class="cv-val" style="color:var(--violet)">100</div>
+          <div class="cv-sub">ASIC input [0, 127]</div>
+        </div>
+        <div class="cv-op">→</div>
+        <div class="cv-box" style="background:rgba(0,255,170,0.05)">
+          <div class="cv-label">÷ 128 (training)</div>
+          <div class="cv-val" style="color:var(--green)">0.781</div>
+          <div class="cv-sub">float32 [0, 0.992]</div>
+        </div>
+      </div>
+      <div class="note ok" style="margin-top:12px">
+        <strong>✅ Lợi ích ASIC</strong>
+        Chuẩn hóa pixel chỉ cần <strong>1 bit-shift</strong> (không cần phép nhân hay chia). Kích thước 128×128 là power-of-2 nên địa chỉ pixel được tính bằng bit-shift: <code style="font-family:monospace;color:var(--cyan)">addr = (y &lt;&lt; 7) + x</code> — không cần phép nhân!
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title" style="color:var(--orange)">🏭 ASIC SPECS (tham khảo)</div>
+      <div class="grid2">
+        <div>
+          <div class="ir"><span class="ik">Process node</span><span class="iv">28nm</span></div>
+          <div class="ir"><span class="ik">Max frequency</span><span class="iv y">200 MHz</span></div>
+          <div class="ir"><span class="ik">Data width</span><span class="iv">8-bit datapath</span></div>
+          <div class="ir"><span class="ik">MAC units</span><span class="iv">64</span></div>
+        </div>
+        <div>
+          <div class="ir"><span class="ik">Memory bandwidth</span><span class="iv">10 GB/s</span></div>
+          <div class="ir"><span class="ik">Power budget</span><span class="iv">100 mW</span></div>
+          <div class="ir"><span class="ik">Memory/image</span><span class="iv c">16 KB (128×128 bytes)</span></div>
+          <div class="ir"><span class="ik">Latency @200MHz</span><span class="iv g">< 10ms/frame</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: PREPROCESSING ═══ -->
+<div id="page-preprocessing" class="page">
+  <div class="topbar">
+    <div class="topbar-breadcrumb">Local Pipeline / <span>preprocessing_asic.py</span></div>
+    <div class="topbar-actions"><span class="status status-local">💻 LOCAL</span></div>
+  </div>
+  <div class="content">
+    <div class="page-header">
+      <div class="phase-tag">BƯỚC 2 · LOCAL</div>
+      <h1>preprocessing_asic.py</h1>
+      <p>Module hàm tiện ích xử lý ảnh đơn lẻ. Được import bởi preprocess_data_asic.py. Không chạy trực tiếp (chỉ cung cấp hàm).</p>
+    </div>
+
+    <div class="card accent-cyan">
+      <div class="card-title" style="color:var(--cyan)">📋 CÁC HÀM CHÍNH</div>
+      <table class="dt">
+        <thead><tr><th>Hàm</th><th>Input</th><th>Output</th><th>Hardware equivalent</th></tr></thead>
+        <tbody>
+          <tr><td style="color:var(--cyan)">rgb_to_grayscale_optimized()</td><td>BGR (H,W,3)</td><td>uint8 (H,W)</td><td>Y = (R>>2)+(G>>1)+(B>>3)</td></tr>
+          <tr><td style="color:var(--cyan)">normalize_to_fixed_point()</td><td>uint8 [0,255]</td><td>int8 [0,127]</td><td>pixel >> 1 (1 bit-shift!)</td></tr>
+          <tr><td style="color:var(--violet)">process_image_asic_friendly()</td><td>BGR image</td><td>int8 (128,128)</td><td>Full pipeline: gray→resize→Q0.7</td></tr>
+          <tr><td style="color:var(--green)">verify_asic_friendly()</td><td>int8 (128,128)</td><td>bool</td><td>Kiểm tra dtype, range, shape</td></tr>
+          <tr><td style="color:var(--textmid)">simulate_asic_inference()</td><td>int8 (128,128)</td><td>print</td><td>Demo bit-shift addressing</td></tr>
+          <tr><td style="color:var(--textmid)">fixed_point_to_float()</td><td>int8 [0,127]</td><td>float32 [0,1]</td><td>value / 128.0</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title" style="color:var(--violet)">⚙️ normalize_to_fixed_point() — Hàm quan trọng nhất</div>
+      <div class="codeblock"><span class="kw">def</span> <span class="fn">normalize_to_fixed_point</span>(img_uint8):
+    <span class="cm">"""uint8 [0,255] → int8 Q0.7 [0,127]"""</span>
+    <span class="cm"># Chỉ cần 1 bit-shift phải</span>
+    <span class="cm"># 255 >> 1 = 127,  128 >> 1 = 64,  0 >> 1 = 0</span>
+    fixed_point = (img_uint8.<span class="fn">astype</span>(np.int16) >> <span class="nm">1</span>).<span class="fn">astype</span>(np.int8)
+    <span class="cm"># Clip đảm bảo range hợp lệ</span>
+    fixed_point = np.<span class="fn">clip</span>(fixed_point, <span class="nm">0</span>, <span class="nm">127</span>)
+    <span class="kw">return</span> fixed_point</div>
+      <div class="note ok">
+        <strong>Tại sao dùng int16 trước?</strong>
+        Nếu uint8 >> 1 trực tiếp, NumPy có thể gây tràn số. Cast sang int16 trước, shift, rồi mới cast về int8 để an toàn.
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title" style="color:var(--green)">🔍 verify_asic_friendly() — Các điều kiện ASIC</div>
+      <div class="step-list">
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(0,229,255,0.15);color:var(--cyan)">1</div>
+          <div class="step-body">
+            <div class="step-title">Power-of-2 dimensions</div>
+            <div class="step-desc"><code style="font-family:monospace;color:var(--cyan)">(h & (h-1)) == 0</code> — 128 là 2^7. ASIC dùng bit-shift addressing. Kích thước 145×145 (cũ) không thỏa điều kiện này.</div>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(124,92,252,0.15);color:var(--violet)">2</div>
+          <div class="step-body">
+            <div class="step-title">dtype == int8</div>
+            <div class="step-desc">ASIC datapath 8-bit. float32 tiêu tốn 4× bộ nhớ và cần FPU.</div>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(0,255,170,0.15);color:var(--green)">3</div>
+          <div class="step-body">
+            <div class="step-title">Range [0, 127]</div>
+            <div class="step-desc">Grayscale ảnh không có giá trị âm. int8 âm được dành cho trường hợp khác (intermediate activations). Input layer dùng [0, 127].</div>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(255,208,96,0.15);color:var(--yellow)">4</div>
+          <div class="step-body">
+            <div class="step-title">Shape == 128×128</div>
+            <div class="step-desc">Phải khớp với IMG_SIZE trong config. Model được build với input_shape=(128,128,1).</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: PREPROCESS DATA ═══ -->
+<div id="page-preprocess_data" class="page">
+  <div class="topbar">
+    <div class="topbar-breadcrumb">Local Pipeline / <span>preprocess_data_asic.py</span></div>
+    <div class="topbar-actions"><span class="status status-local">💻 LOCAL</span></div>
+  </div>
+  <div class="content">
+    <div class="page-header">
+      <div class="phase-tag">BƯỚC 3 · LOCAL</div>
+      <h1>preprocess_data_asic.py</h1>
+      <p>Batch processing toàn bộ dataset. Kết hợp MediaPipe face mesh với ASIC preprocessing. Có caching để không phải chạy lại từ đầu.</p>
+    </div>
+
+    <div class="card accent-violet">
+      <div class="card-title" style="color:var(--violet)">🔄 PIPELINE XỬ LÝ TỪNG ẢNH</div>
+      <div class="step-list">
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(0,229,255,0.15);color:var(--cyan)">1</div>
+          <div class="step-body">
+            <div class="step-title">cv2.imread() — Load ảnh BGR</div>
+            <div class="step-desc">OpenCV đọc ảnh dưới dạng BGR (không phải RGB). Giữ nguyên BGR cho MediaPipe.</div>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(0,229,255,0.15);color:var(--cyan)">2</div>
+          <div class="step-body">
+            <div class="step-title">Haar Cascade — Detect face bounding box</div>
+            <div class="step-desc">haarcascade_frontalface_default.xml. Scale factor 1.3, min neighbors 5. Nếu không detect được face → dùng toàn bộ ảnh gốc.</div>
+            <span class="step-code">face_cascade.detectMultiScale(img, 1.3, 5)</span>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(124,92,252,0.15);color:var(--violet)">3</div>
+          <div class="step-body">
+            <div class="step-title">Crop ROI — Cắt vùng mặt</div>
+            <div class="step-desc">roi_color = img[y:y+h, x:x+w] — lấy vùng mặt từ ảnh gốc. Giữ nguyên màu (BGR) cho bước MediaPipe tiếp theo.</div>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(255,114,64,0.15);color:var(--orange)">4</div>
+          <div class="step-body">
+            <div class="step-title">⭐ FaceMesh.process() — Phát hiện landmarks TRÊN ẢNH MÀU</div>
+            <div class="step-desc">MediaPipe FaceMesh cần ảnh RGB để hoạt động chính xác. 468 landmarks đặc biệt vùng mắt được detect.</div>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(255,114,64,0.15);color:var(--orange)">5</div>
+          <div class="step-body">
+            <div class="step-title">⭐ draw_landmarks() — Vẽ landmarks WHITE lên ROI màu</div>
+            <div class="step-desc">Quan trọng: vẽ TRƯỚC khi chuyển grayscale. Landmarks (trắng) sẽ "hòa tan" vào texture ảnh khi resize.</div>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(0,229,255,0.15);color:var(--cyan)">6</div>
+          <div class="step-body">
+            <div class="step-title">cvtColor(BGR→GRAY) — Chuyển grayscale</div>
+            <div class="step-desc">SAU KHI đã vẽ landmarks. Grayscale giảm dữ liệu 3× (3 channels → 1 channel) và ASIC không cần xử lý màu.</div>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(0,229,255,0.15);color:var(--cyan)">7</div>
+          <div class="step-body">
+            <div class="step-title">resize(128, 128, INTER_AREA) — Thu nhỏ</div>
+            <div class="step-desc">INTER_AREA tốt nhất khi shrink (giảm kích thước) — tránh aliasing. Landmarks được anti-aliased vào pixel, tạo feature mịn.</div>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(0,255,170,0.15);color:var(--green)">8</div>
+          <div class="step-body">
+            <div class="step-title">>> 1 — Q0.7 encode</div>
+            <div class="step-desc">uint8 [0,255] → int8 [0,127]. Bit-shift đơn giản, ASIC thực hiện trong 1 clock cycle.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note warn">
+      <strong>⚠️ Tại sao vẽ landmarks TRƯỚC khi grayscale?</strong>
+      FaceMesh cần ảnh màu để phát hiện landmarks chính xác. Nếu chuyển grayscale trước → MediaPipe sẽ không hoạt động đúng hoặc miss nhiều landmark. Sau khi vẽ xong mới chuyển grayscale → tất cả landmark được encode vào ảnh như texture trắng.
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title" style="color:var(--green)">💾 CACHING MECHANISM</div>
+      <div class="codeblock"><span class="cm"># Nếu cache tồn tại → load ngay, không xử lý lại</span>
+<span class="kw">if</span> use_cache <span class="kw">and</span> os.path.<span class="fn">exists</span>(X_CACHE_FILE) <span class="kw">and</span> os.path.<span class="fn">exists</span>(Y_CACHE_FILE):
+    X = np.<span class="fn">load</span>(X_CACHE_FILE)   <span class="cm"># X_preprocessed_asic.npy</span>
+    y = np.<span class="fn">load</span>(Y_CACHE_FILE)   <span class="cm"># y_preprocessed_asic.npy</span>
+    <span class="kw">return</span> X, y
+
+<span class="cm"># Xóa cache để force reprocess:</span>
+<span class="cm"># os.remove(X_CACHE_FILE); os.remove(Y_CACHE_FILE)</span></div>
+      <div class="note info" style="margin-top:10px">
+        <strong>Khi nào xóa cache?</strong>
+        Khi thay đổi IMG_SIZE, thay đổi preprocessing pipeline, hoặc thêm/bớt ảnh vào dataset. Cache lưu dưới dạng .npy nên load rất nhanh lần sau.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: SPLIT ═══ -->
+<div id="page-split" class="page">
+  <div class="topbar">
+    <div class="topbar-breadcrumb">Local Pipeline / <span>split_data_asic.py</span></div>
+    <div class="topbar-actions"><span class="status status-local">💻 LOCAL</span></div>
+  </div>
+  <div class="content">
+    <div class="page-header">
+      <div class="phase-tag">BƯỚC 4 · LOCAL</div>
+      <h1>split_data_asic.py</h1>
+      <p>Chia dữ liệu đã xử lý thành train/test với stratified sampling. Đảm bảo tỷ lệ class cân bằng trong cả 2 tập.</p>
+    </div>
+
+    <div class="grid2">
+      <div class="card accent-pink">
+        <div class="card-title" style="color:var(--pink)">✂️ THAM SỐ SPLIT</div>
+        <div class="ir"><span class="ik">Hàm</span><span class="iv">sklearn train_test_split()</span></div>
+        <div class="ir"><span class="ik">test_size</span><span class="iv p">0.20 (20% test)</span></div>
+        <div class="ir"><span class="ik">random_state</span><span class="iv">42 (reproducible)</span></div>
+        <div class="ir"><span class="ik">stratify=y</span><span class="iv g">Giữ tỷ lệ class cân bằng</span></div>
+        <div class="ir"><span class="ik">Train ratio</span><span class="iv">80% dữ liệu</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--green)">📦 OUTPUT FILES</div>
+        <div class="ir"><span class="ik">X_train_asic.npy</span><span class="iv g">(N_train, 128, 128) · int8</span></div>
+        <div class="ir"><span class="ik">X_test_asic.npy</span><span class="iv g">(N_test, 128, 128) · int8</span></div>
+        <div class="ir"><span class="ik">y_train_asic.npy</span><span class="iv g">(N_train,) · int32</span></div>
+        <div class="ir"><span class="ik">y_test_asic.npy</span><span class="iv g">(N_test,) · int32</span></div>
+        <div class="ir"><span class="ik">Labels</span><span class="iv">0 = Fatigue · 1 = Active</span></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title" style="color:var(--cyan)">🤔 TẠI SAO CẦN STRATIFY?</div>
+      <p style="font-size:0.8rem;color:var(--textmid);margin-bottom:12px">Nếu dataset không cân bằng (ví dụ: 70% Active, 30% Fatigue) mà split ngẫu nhiên, test set có thể bị lệch (ví dụ: 90% Active). Stratify đảm bảo tỷ lệ giống nhau trong cả train và test.</p>
+      <div class="codeblock">X_train, X_test, y_train, y_test = train_test_split(
+    X, y,
+    random_state=<span class="nm">42</span>,
+    test_size=<span class="nm">0.20</span>,
+    stratify=y   <span class="cm"># ← quan trọng: giữ phân phối class</span>
+)</div>
+    </div>
+
+    <div class="note ok">
+      <strong>📤 Sau bước này</strong>
+      Upload 4 file .npy lên Google Drive vào thư mục được cấu hình trong DRIVE_PATH của notebook Colab. Sau đó mới chạy training trên Colab.
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: RUN ALL ═══ -->
+<div id="page-runall" class="page">
+  <div class="topbar">
+    <div class="topbar-breadcrumb">Local Pipeline / <span>run_all_asic.py</span></div>
+    <div class="topbar-actions"><span class="status status-local">💻 LOCAL</span></div>
+  </div>
+  <div class="content">
+    <div class="page-header">
+      <div class="phase-tag">BƯỚC 5 · LOCAL · MASTER SCRIPT</div>
+      <h1>run_all_asic.py</h1>
+      <p>Script duy nhất cần chạy để thực hiện toàn bộ local pipeline. Tự động check dependencies, kiểm tra dataset, chạy preprocessing và split, rồi verify kết quả.</p>
+    </div>
+
+    <div class="note ok">
+      <strong>🚀 Cách chạy đơn giản nhất</strong>
+      <code style="font-family:monospace;color:var(--cyan);display:block;margin-top:6px">python run_all_asic.py</code>
+    </div>
+
+    <div class="card accent-blue">
+      <div class="card-title" style="color:var(--blue)">📋 THỨ TỰ THỰC HIỆN</div>
+      <div class="step-list">
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(77,148,255,0.15);color:var(--blue)">1</div>
+          <div class="step-body">
+            <div class="step-title">check_dependencies()</div>
+            <div class="step-desc">Import thử cv2, numpy, mediapipe, sklearn, tqdm. Báo lỗi nếu thiếu package.</div>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(77,148,255,0.15);color:var(--blue)">2</div>
+          <div class="step-body">
+            <div class="step-title">check_dataset()</div>
+            <div class="step-desc">Kiểm tra ACTIVE_DIR và FATIGUE_DIR tồn tại. Đếm số ảnh, báo cáo tổng số.</div>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(77,148,255,0.15);color:var(--blue)">3</div>
+          <div class="step-body">
+            <div class="step-title">display_asic_config()</div>
+            <div class="step-desc">In ra cấu hình ASIC: IMG_SIZE, format Q0.7, scale factor để xác nhận trước khi chạy.</div>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(124,92,252,0.15);color:var(--violet)">4</div>
+          <div class="step-body">
+            <div class="step-title">load_and_preprocess_asic() — Gọi preprocess_data_asic.py</div>
+            <div class="step-desc">Xử lý toàn bộ dataset. Dùng cache nếu có. Output: X_preprocessed, y_preprocessed.</div>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(255,77,141,0.15);color:var(--pink)">5</div>
+          <div class="step-body">
+            <div class="step-title">split_and_save_asic() — Gọi split_data_asic.py</div>
+            <div class="step-desc">Chia 80/20 stratified. Lưu 4 file .npy. Output: X_train, X_test, y_train, y_test.</div>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(0,255,170,0.15);color:var(--green)">6</div>
+          <div class="step-body">
+            <div class="step-title">verify_asic_friendly() + simulate_asic_inference()</div>
+            <div class="step-desc">Verify format của X_train[0]. Simulate cách ASIC truy cập bộ nhớ (bit-shift addressing).</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: COLAB LOAD ═══ -->
+<div id="page-colab_load" class="page">
+  <div class="topbar">
+    <div class="topbar-breadcrumb">Google Colab / <span>Load & Convert Data</span></div>
+    <div class="topbar-actions"><span class="status status-colab">☁️ COLAB</span></div>
+  </div>
+  <div class="content">
+    <div class="page-header">
+      <div class="phase-tag">COLAB 1 · STEPS 1–4</div>
+      <h1>Load & Convert Data</h1>
+      <p>Cài dependencies, mount Drive, load file .npy, convert int8→float32, tạo tf.data pipeline với augmentation.</p>
+    </div>
+
+    <div class="note warn">
+      <strong>⚠️ Quan trọng: Chạy riêng 2 cell đầu tiên</strong>
+      pip uninstall numpy và pip install numpy phải chạy TRƯỚC rồi RESTART RUNTIME. Sau đó mới chạy phần còn lại.
+    </div>
+
+    <div class="card accent-orange">
+      <div class="card-title" style="color:var(--orange)">📦 CÀI DEPENDENCIES (Colab)</div>
+      <div class="codeblock"><span class="cm"># Cell 1 — chạy riêng, sau đó RESTART RUNTIME</span>
+<span class="hl">!pip uninstall -y numpy</span>
+<span class="hl">!pip install numpy==1.26.4</span>
+
+<span class="cm"># Cell 2 — sau khi restart runtime</span>
+<span class="hl">!pip install -q tensorflow-model-optimization</span>
+
+<span class="cm"># KHÔNG set: os.environ["TF_USE_LEGACY_KERAS"] = "1"</span>
+<span class="cm"># Lệnh này phá vỡ Keras 3 + tfmot trong TF 2.16+</span></div>
+      <button class="copy-btn" onclick="copyCode(this)">copy</button>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title" style="color:var(--cyan)">🔄 CONVERT INT8 → FLOAT32 (load_asic_data)</div>
+      <div class="codeblock"><span class="cm"># Load .npy files từ Google Drive</span>
+X_train = np.<span class="fn">load</span>(<span class="st">'X_train_asic.npy'</span>)  <span class="cm"># int8, shape (N,128,128)</span>
+
+<span class="cm"># Convert Q0.7 int8 → float32 [0, ~1.0]</span>
+X_train_f = X_train.<span class="fn">astype</span>(np.float32) / <span class="nm">128.0</span>
+<span class="cm"># Tại sao 128? Vì SCALE_FACTOR = 2^7 = 128</span>
+
+<span class="cm"># Thêm channel dim: (N,128,128) → (N,128,128,1)</span>
+X_train_f = np.<span class="fn">expand_dims</span>(X_train_f, axis=<span class="nm">-1</span>)</div>
+
+      <div class="note info" style="margin-top:10px">
+        <strong>Tại sao convert về float32 để train?</strong>
+        Model training cần gradient descent trên số thực. int8 không thể backpropagate. float32 là format training chuẩn. QAT sẽ simulate quantization nhưng vẫn giữ float32 weights trong quá trình training.
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title" style="color:var(--violet)">🔀 TF.DATA AUGMENTATION PIPELINE</div>
+      <div class="codeblock"><span class="kw">def</span> <span class="fn">augment</span>(image, label):
+    image = tf.image.<span class="fn">random_flip_left_right</span>(image)     <span class="cm"># Lật ngang</span>
+    image = tf.image.<span class="fn">random_brightness</span>(image, <span class="nm">0.1</span>)     <span class="cm"># Độ sáng ±10%</span>
+    image = tf.image.<span class="fn">random_contrast</span>(image, <span class="nm">0.9</span>, <span class="nm">1.1</span>) <span class="cm"># Contrast 90-110%</span>
+    image = tf.<span class="fn">clip_by_value</span>(image, <span class="nm">0.0</span>, <span class="nm">1.0</span>)         <span class="cm"># Clip sau augment!</span>
+    <span class="kw">return</span> image, label
+
+train_dataset = (
+    tf.data.Dataset.<span class="fn">from_tensor_slices</span>((X_train, y_train))
+    .<span class="fn">shuffle</span>(buffer_size=<span class="fn">len</span>(X_train), seed=<span class="nm">42</span>)
+    .<span class="fn">map</span>(augment, num_parallel_calls=AUTOTUNE)
+    .<span class="fn">batch</span>(<span class="nm">32</span>)
+    .<span class="fn">prefetch</span>(AUTOTUNE)
+)</div>
+      <div class="note ok" style="margin-top:10px">
+        <strong>Augmentation nhẹ, không rotation/zoom</strong>
+        Chỉ flip, brightness và contrast — đủ để tránh overfitting mà không làm méo feature mắt (quan trọng cho drowsiness detection).
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: COLAB MODEL ═══ -->
+<div id="page-colab_model" class="page">
+  <div class="topbar">
+    <div class="topbar-breadcrumb">Google Colab / <span>Build Model</span></div>
+    <div class="topbar-actions"><span class="status status-colab">☁️ COLAB</span></div>
+  </div>
+  <div class="content">
+    <div class="page-header">
+      <div class="phase-tag">COLAB 2 · STEP 5</div>
+      <h1>Build ASIC-Friendly Model</h1>
+      <p>Kiến trúc CNN với SeparableConv2D. Mỗi quyết định thiết kế đều có lý do phần cứng rõ ràng.</p>
+    </div>
+
+    <div class="card accent-cyan">
+      <div class="card-title" style="color:var(--cyan)">🧠 KIẾN TRÚC MODEL</div>
+      <table class="dt">
+        <thead><tr><th>Block</th><th>Layer</th><th>Output Shape</th><th>Lý do ASIC</th></tr></thead>
+        <tbody>
+          <tr><td>Input</td><td>Input Q0.7</td><td>[1,128,128,1]</td><td>Power-of-2, int8, grayscale</td></tr>
+          <tr><td rowspan="4" style="color:var(--cyan)">Block 1</td><td>SeparableConv2D(32, 3×3)</td><td>[1,128,128,32]</td><td>DW+PW thay Conv2D: ít MAC hơn</td></tr>
+          <tr><td>BatchNorm → Fold</td><td>—</td><td>Fold vào weight, 0 op khi inference</td></tr>
+          <tr><td>ReLU</td><td>[1,128,128,32]</td><td>1 comparator, không cần LUT</td></tr>
+          <tr><td>MaxPool 2×2</td><td>[1,64,64,32]</td><td>Không cần requant, giữ scale</td></tr>
+          <tr><td style="color:var(--violet)">Block 2</td><td>SepConv(64)+BN+ReLU+Pool</td><td>[1,32,32,64]</td><td>Tăng filter gấp đôi, giảm HW gấp đôi</td></tr>
+          <tr><td style="color:var(--pink)">Block 3</td><td>SepConv(128)+BN+ReLU+Pool</td><td>[1,16,16,128]</td><td>Deep feature extraction</td></tr>
+          <tr><td style="color:var(--orange)">Block 4</td><td>SepConv(128)+BN+ReLU</td><td>[1,16,16,128]</td><td>KHÔNG Pool — 16×16 đủ nhỏ cho GAP</td></tr>
+          <tr><td style="color:var(--green)">Head</td><td>GlobalAveragePool</td><td>[1,128]</td><td>16×16×128→128, tiết kiệm SRAM vs Flatten</td></tr>
+          <tr><td>Head</td><td>Dense(32) + ReLU</td><td>[1,32]</td><td>Classifier nhẹ</td></tr>
+          <tr><td>Head</td><td>Dense(1) — NO activation</td><td>[1,1]</td><td>Raw logit, ASIC chỉ cần 1 comparison</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grid2" style="margin-top:4px">
+      <div class="card">
+        <div class="card-title" style="color:var(--yellow)">✅ DÙNG</div>
+        <div class="ir"><span class="ik">SeparableConv2D</span><span class="iv g">DW+PW tách biệt, ít MACs</span></div>
+        <div class="ir"><span class="ik">ReLU</span><span class="iv g">1 comparator, không LUT</span></div>
+        <div class="ir"><span class="ik">Filter bội số 8</span><span class="iv g">SIMD alignment</span></div>
+        <div class="ir"><span class="ik">GlobalAveragePool</span><span class="iv g">Tiết kiệm SRAM</span></div>
+        <div class="ir"><span class="ik">use_bias=False trong Conv</span><span class="iv g">BN sẽ fold bias vào</span></div>
+        <div class="ir"><span class="ik">from_logits=True</span><span class="iv g">Không sigmoid ở output</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--red)">❌ KHÔNG DÙNG</div>
+        <div class="ir"><span class="ik">Swish / GeLU</span><span class="iv r">Cần LUT 256 entry phức tạp</span></div>
+        <div class="ir"><span class="ik">Sigmoid ở output</span><span class="iv r">Cần LUT, so sánh logit đủ rồi</span></div>
+        <div class="ir"><span class="ik">Dropout</span><span class="iv r">Không cần, BN + augmentation đủ</span></div>
+        <div class="ir"><span class="ik">BatchNorm riêng lúc inference</span><span class="iv r">Fold vào weight sau training</span></div>
+        <div class="ir"><span class="ik">Float output</span><span class="iv r">ASIC không có FPU</span></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title" style="color:var(--violet)">🔬 BATCHNORM FOLD — Tại sao không implement BN trên ASIC?</div>
+      <p style="font-size:0.8rem;color:var(--textmid);margin-bottom:12px">BatchNorm có 4 tham số: γ (scale), β (shift), μ (mean), σ (std). Trong inference, tất cả là constants. Ta có thể "fold" vào Conv weight và bias:</p>
+      <div class="codeblock"><span class="cm">// BatchNorm: out = γ × (x - μ) / √(σ²+ε) + β</span>
+<span class="cm">// Fold vào Conv: W_fused = W × γ / √(σ²+ε)</span>
+<span class="cm">//               b_fused = β - γ × μ / √(σ²+ε)</span>
+<span class="cm">// Kết quả: Inference = Conv(x, W_fused) + b_fused</span>
+<span class="cm">// → Không cần BN block trong hardware!</span></div>
+      <div class="note ok" style="margin-top:10px">
+        <strong>TFLite tự động fold BN khi export!</strong>
+        Khi chạy TFLiteConverter.convert(), TFLite tự động fuse BatchNorm vào Conv weights. RTL engineer không cần implement BN.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: COLAB TRAIN ═══ -->
+<div id="page-colab_train" class="page">
+  <div class="topbar">
+    <div class="topbar-breadcrumb">Google Colab / <span>Float32 Training</span></div>
+    <div class="topbar-actions"><span class="status status-colab">☁️ COLAB</span></div>
+  </div>
+  <div class="content">
+    <div class="page-header">
+      <div class="phase-tag">COLAB 3 · STEP 6</div>
+      <h1>Float32 Warm-up Training</h1>
+      <p>Train model float32 đầy đủ trước (30 epochs). QAT cold-start (bắt đầu từ random weights) rất khó hội tụ.</p>
+    </div>
+
+    <div class="card accent-orange">
+      <div class="card-title" style="color:var(--orange)">⚙️ COMPILE & FIT</div>
+      <div class="codeblock">base_model.<span class="fn">compile</span>(
+    <span class="cm"># Fix: dùng legacy.Adam tương thích với callbacks TF 2.16+</span>
+    optimizer=tf.keras.optimizers.legacy.<span class="fn">Adam</span>(learning_rate=<span class="nm">1e-3</span>),
+    loss=tf.keras.losses.<span class="fn">BinaryCrossentropy</span>(from_logits=<span class="kw">True</span>),
+    metrics=[<span class="st">'accuracy'</span>]
+)
+
+callbacks = [
+    tf.keras.callbacks.<span class="fn">EarlyStopping</span>(
+        monitor=<span class="st">'val_accuracy'</span>, patience=<span class="nm">7</span>,
+        restore_best_weights=<span class="kw">True</span>  <span class="cm"># Quan trọng!</span>
+    ),
+    tf.keras.callbacks.<span class="fn">ReduceLROnPlateau</span>(
+        monitor=<span class="st">'val_loss'</span>, factor=<span class="nm">0.5</span>,
+        patience=<span class="nm">3</span>, min_lr=<span class="nm">1e-6</span>
+    ),
+]</div>
+    </div>
+
+    <div class="grid2" style="margin-top:4px">
+      <div class="card">
+        <div class="card-title" style="color:var(--yellow)">📊 HYPERPARAMETERS</div>
+        <div class="ir"><span class="ik">Epochs</span><span class="iv">30 (max)</span></div>
+        <div class="ir"><span class="ik">Learning rate</span><span class="iv y">1e-3 (ban đầu)</span></div>
+        <div class="ir"><span class="ik">Batch size</span><span class="iv">32</span></div>
+        <div class="ir"><span class="ik">EarlyStopping patience</span><span class="iv">7 epochs</span></div>
+        <div class="ir"><span class="ik">ReduceLR patience</span><span class="iv">3 epochs × 0.5</span></div>
+        <div class="ir"><span class="ik">Min LR</span><span class="iv">1e-6</span></div>
+        <div class="ir"><span class="ik">Loss</span><span class="iv c">BinaryCrossentropy(from_logits=True)</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--cyan)">💾 OUTPUT</div>
+        <div class="ir"><span class="ik">File</span><span class="iv g">base_weights.weights.h5</span></div>
+        <div class="ir"><span class="ik">Cách lưu</span><span class="iv">model.save_weights() thủ công</span></div>
+        <div class="ir"><span class="ik">Tại sao không ModelCheckpoint?</span><span class="iv r">Bug serialize với tf.data</span></div>
+        <div class="ir"><span class="ik">Accuracy target</span><span class="iv g">> 90% val_accuracy</span></div>
+      </div>
+    </div>
+
+    <div class="note info">
+      <strong>Tại sao from_logits=True?</strong>
+      Output layer Dense(1) không có sigmoid. Loss function tự thêm sigmoid nội bộ — tránh numerical instability (sigmoid(x) rất nhỏ khi x rất âm). Sau QAT, ASIC chỉ cần so sánh logit với zero point để phân loại.
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: COLAB QAT ═══ -->
+<div id="page-colab_qat" class="page">
+  <div class="topbar">
+    <div class="topbar-breadcrumb">Google Colab / <span>QAT Fine-tuning</span></div>
+    <div class="topbar-actions"><span class="status status-colab">☁️ COLAB</span></div>
+  </div>
+  <div class="content">
+    <div class="page-header">
+      <div class="phase-tag">COLAB 4 · STEP 7</div>
+      <h1>Quantization-Aware Training (QAT)</h1>
+      <p>Fine-tune model với fake-quantization nodes để model học weights chịu được quantization error. Kết quả: accuracy drop &lt; 1% sau INT8 export.</p>
+    </div>
+
+    <div class="card accent-yellow">
+      <div class="card-title" style="color:var(--yellow)">🔬 QAT HOẠT ĐỘNG NHƯ THẾ NÀO?</div>
+      <div class="grid2">
+        <div>
+          <div style="font-size:0.8rem;color:var(--textmid);margin-bottom:10px">
+            <strong style="color:var(--yellow)">Forward pass:</strong> Simulate round(w/scale)*scale — gây quantization error nhân tạo
+          </div>
+          <div style="font-size:0.8rem;color:var(--textmid)">
+            <strong style="color:var(--cyan)">Backward pass:</strong> Straight-Through Estimator — gradient đi thẳng qua hàm round() (coi như identity)
+          </div>
+        </div>
+        <div>
+          <div class="ir"><span class="ik">Scale factors học từ</span><span class="iv y">EMA of observed activations</span></div>
+          <div class="ir"><span class="ik">Weight scale</span><span class="iv">per-channel, symmetric</span></div>
+          <div class="ir"><span class="ik">Activation scale</span><span class="iv">per-tensor, asymmetric</span></div>
+          <div class="ir"><span class="ik">Kết quả</span><span class="iv g">Weights "chịu" INT8 rounding</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title" style="color:var(--violet)">⚙️ QAT CODE — Fixed Colab Bugs</div>
+      <div class="codeblock"><span class="cm"># Fix 1: KHÔNG clone_model + set_weights từ chính nó (weights bị reset)</span>
+<span class="cm"># Fix 2: Lưu ra file trước, wrap QAT, rồi load lại</span>
+
+_tmp = os.path.<span class="fn">join</span>(OUTPUT_PATH, <span class="st">'_tmp_base.weights.h5'</span>)
+base_model.<span class="fn">save_weights</span>(_tmp)
+
+<span class="cm"># Wrap: thêm fake-quant nodes vào mỗi layer</span>
+qat_model = tfmot.quantization.keras.<span class="fn">quantize_model</span>(base_model)
+
+<span class="cm"># Fix 3: by_name=True + skip_mismatch=True</span>
+<span class="cm"># QAT thêm extra variables → tên layer thay đổi</span>
+qat_model.<span class="fn">load_weights</span>(_tmp, by_name=<span class="kw">True</span>, skip_mismatch=<span class="kw">True</span>)
+
+<span class="cm"># Fine-tune với LR nhỏ hơn (model đã hội tụ rồi)</span>
+qat_model.<span class="fn">compile</span>(
+    optimizer=tf.keras.optimizers.legacy.<span class="fn">Adam</span>(learning_rate=<span class="nm">1e-4</span>),
+    loss=tf.keras.losses.<span class="fn">BinaryCrossentropy</span>(from_logits=<span class="kw">True</span>),
+    metrics=[<span class="st">'accuracy'</span>]
+)
+qat_model.<span class="fn">fit</span>(train_dataset, epochs=<span class="nm">15</span>, ...)</div>
+      <button class="copy-btn" onclick="copyCode(this)">copy</button>
+    </div>
+
+    <div class="grid2" style="margin-top:4px">
+      <div class="card">
+        <div class="card-title" style="color:var(--orange)">📊 QAT PARAMETERS</div>
+        <div class="ir"><span class="ik">Epochs</span><span class="iv">15 (max)</span></div>
+        <div class="ir"><span class="ik">Learning rate</span><span class="iv o">1e-4 (nhỏ hơn 10×)</span></div>
+        <div class="ir"><span class="ik">EarlyStopping patience</span><span class="iv">5 epochs</span></div>
+        <div class="ir"><span class="ik">Accuracy drop target</span><span class="iv g">< 1% vs float32</span></div>
+        <div class="ir"><span class="ik">Output</span><span class="iv g">qat_weights.weights.h5</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--red)">🚨 CÁC LỖI ĐÃ FIX</div>
+        <div class="ir"><span class="ik">TF_USE_LEGACY_KERAS</span><span class="iv r">KHÔNG SET — phá Keras 3</span></div>
+        <div class="ir"><span class="ik">clone_model+set_weights(self)</span><span class="iv r">Weights bị reset!</span></div>
+        <div class="ir"><span class="ik">Adam (non-legacy)</span><span class="iv r">Lỗi với callbacks</span></div>
+        <div class="ir"><span class="ik">load_weights thẳng</span><span class="iv r">Dùng by_name+skip_mismatch</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: COLAB EXPORT ═══ -->
+<div id="page-colab_export" class="page">
+  <div class="topbar">
+    <div class="topbar-breadcrumb">Google Colab / <span>INT8 Export & Verify</span></div>
+    <div class="topbar-actions"><span class="status status-colab">☁️ COLAB</span></div>
+  </div>
+  <div class="content">
+    <div class="page-header">
+      <div class="phase-tag">COLAB 5 · STEPS 8–10</div>
+      <h1>INT8 TFLite Export & Verify</h1>
+      <p>Convert QAT model sang TFLite INT8. Verify accuracy. Extract scale factors cho RTL engineer. Generate C header file.</p>
+    </div>
+
+    <div class="card accent-green">
+      <div class="card-title" style="color:var(--green)">📦 TFLITE CONVERTER CONFIG</div>
+      <div class="codeblock">converter = tf.lite.TFLiteConverter.<span class="fn">from_keras_model</span>(qat_model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+
+<span class="cm"># Representative dataset: calibrate activation scales</span>
+<span class="cm"># Giới hạn 200 mẫu để tránh timeout Colab</span>
+<span class="kw">def</span> <span class="fn">representative_dataset</span>():
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="nm">200</span>):
+        sample = X_train[i:i+<span class="nm">1</span>].<span class="fn">astype</span>(np.float32)
+        <span class="kw">yield</span> [sample]
+
+converter.representative_dataset = representative_dataset
+<span class="cm"># Bắt buộc INT8: không có FP fallback</span>
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+converter.inference_input_type  = tf.int8  <span class="cm"># ASIC gửi int8 trực tiếp</span>
+converter.inference_output_type = tf.int8  <span class="cm"># Output là int8 logit</span>
+
+tflite_model = converter.<span class="fn">convert</span>()</div>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title" style="color:var(--cyan)">📊 ACCURACY COMPARISON TARGET</div>
+      <div class="acc-meter">
+        <div class="acc-row">
+          <div class="acc-label">Float32 Base Model</div>
+          <div class="acc-bar-wrap"><div class="acc-bar" style="width:95%;background:var(--blue)"></div></div>
+          <div class="acc-pct">~95%</div>
+        </div>
+        <div class="acc-row">
+          <div class="acc-label">QAT Model (fake-quant)</div>
+          <div class="acc-bar-wrap"><div class="acc-bar" style="width:94%;background:var(--violet)"></div></div>
+          <div class="acc-pct">~94%</div>
+        </div>
+        <div class="acc-row">
+          <div class="acc-label">INT8 TFLite (target)</div>
+          <div class="acc-bar-wrap"><div class="acc-bar" style="width:93%;background:var(--green)"></div></div>
+          <div class="acc-pct">&gt;93%</div>
+        </div>
+      </div>
+      <div class="note ok">
+        <strong>✅ Tiêu chí đạt</strong>
+        Accuracy drop so với float32 < 2%. Nếu > 2%: tăng QAT epochs, hoặc tăng representative_dataset từ 200 lên 500 mẫu.
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title" style="color:var(--yellow)">🔢 SCALE FACTORS — Thông tin cho RTL Engineer</div>
+      <p style="font-size:0.8rem;color:var(--textmid);margin-bottom:12px">Mỗi layer có bộ (scale, zero_point) riêng. RTL engineer đọc từ TFLite metadata và hardcode vào config registers.</p>
+      <div class="codeblock"><span class="cm"># Đọc scale factors từ TFLite model</span>
+interpreter = tf.lite.<span class="fn">Interpreter</span>(model_path=tflite_path)
+interpreter.<span class="fn">allocate_tensors</span>()
+
+<span class="cm"># Input: scale=1/128=0.0078125, zp=-128</span>
+inp = interpreter.<span class="fn">get_input_details</span>()[<span class="nm">0</span>]
+inp_scale = inp[<span class="st">'quantization_parameters'</span>][<span class="st">'scales'</span>][<span class="nm">0</span>]
+inp_zp    = inp[<span class="st">'quantization_parameters'</span>][<span class="st">'zero_points'</span>][<span class="nm">0</span>]
+
+<span class="cm"># Output: scale~0.0665, zp=-2</span>
+out = interpreter.<span class="fn">get_output_details</span>()[<span class="nm">0</span>]
+out_scale = out[<span class="st">'quantization_parameters'</span>][<span class="st">'scales'</span>][<span class="nm">0</span>]
+out_zp    = out[<span class="st">'quantization_parameters'</span>][<span class="st">'zero_points'</span>][<span class="nm">0</span>]
+
+<span class="cm"># Phân loại ASIC: chỉ cần 1 comparison!</span>
+fatigue = (int(output[<span class="nm">0</span>][<span class="nm">0</span>]) <= out_zp)  <span class="cm"># logit ≤ 0 → FATIGUE</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: REALTIME ═══ -->
+<div id="page-realtime" class="page">
+  <div class="topbar">
+    <div class="topbar-breadcrumb">Deploy / <span>Realtime Inference</span></div>
+    <div class="topbar-actions"><span class="status status-output">🚗 DEPLOY</span></div>
+  </div>
+  <div class="content">
+    <div class="page-header">
+      <div class="phase-tag">DEPLOY</div>
+      <h1>Realtime Inference</h1>
+      <p>realtime_cam.py — Inference từ webcam với preprocessing giống hệt lúc training. State machine lọc false positive từ chớp mắt bình thường.</p>
+    </div>
+
+    <div class="note warn">
+      <strong>⚠️ Preprocessing PHẢI giống hệt lúc train!</strong>
+      Train dùng: landmark → grayscale → resize → Q0.7. Inference PHẢI theo đúng thứ tự này. Nếu bỏ bước nào hoặc đổi thứ tự → accuracy giảm mạnh.
+    </div>
+
+    <div class="card accent-cyan">
+      <div class="card-title" style="color:var(--cyan)">🔄 PREPROCESSING REALTIME</div>
+      <div class="codeblock"><span class="cm"># Mỗi frame từ webcam:</span>
+<span class="nm">1</span>. Haar Cascade → detect face → crop ROI
+<span class="nm">2</span>. FaceMesh.process(ROI_color) → 468 landmarks
+<span class="nm">3</span>. draw_landmarks(trắng) lên ROI màu
+<span class="nm">4</span>. cvtColor(BGR→GRAY)
+<span class="nm">5</span>. resize(<span class="nm">128</span>, <span class="nm">128</span>, INTER_AREA)
+<span class="nm">6</span>. >> <span class="nm">1</span>  →  int8 Q0.7 [<span class="nm">0</span>, <span class="nm">127</span>]
+<span class="nm">7</span>. / <span class="nm">128.0</span>  →  float32 [<span class="nm">0</span>, <span class="nm">1</span>]
+<span class="nm">8</span>. quantize: round(float / inp_scale + inp_zp) → int8
+<span class="nm">9</span>. interpreter.<span class="fn">invoke</span>()  →  int8 logit
+<span class="nm">10</span>. prob = <span class="fn">sigmoid</span>((out_i8 - out_zp) × out_scale)</div>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title" style="color:var(--violet)">🔧 CALIBRATED THRESHOLDS (từ log thực tế)</div>
+      <table class="dt">
+        <thead><tr><th>Tham số</th><th>Giá trị cũ</th><th>Giá trị mới</th><th>Lý do</th></tr></thead>
+        <tbody>
+          <tr><td style="color:var(--pink)">FATIGUE_THRESHOLD</td><td style="color:var(--red)">0.01</td><td style="color:var(--green)">0.50</td><td>Log: prob buồn ngủ 0.06–0.41. Threshold 0.01 → không bao giờ trigger</td></tr>
+          <tr><td style="color:var(--yellow)">WATCHING_THRESHOLD</td><td style="color:var(--red)">—</td><td style="color:var(--green)">0.65</td><td>Early warning zone: 0.50–0.65</td></tr>
+          <tr><td>MIN_DURATION</td><td style="color:var(--red)">0.5s</td><td style="color:var(--green)">1.5s</td><td>Phân biệt chớp mắt (~200ms) với buồn ngủ</td></tr>
+          <tr><td>EMA alpha</td><td style="color:var(--red)">—</td><td style="color:var(--green)">0.35</td><td>Smooth noise: prob_ema = 0.35×new + 0.65×old</td></tr>
+          <tr><td>Sliding window</td><td style="color:var(--red)">—</td><td style="color:var(--green)">5 frames</td><td>Trung bình 5 inference liên tiếp</td></tr>
+          <tr><td>INFERENCE_STRIDE</td><td style="color:var(--red)">3</td><td style="color:var(--green)">2</td><td>Cập nhật nhanh hơn (mỗi 2 frame)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title" style="color:var(--orange)">🚦 3-STATE MACHINE</div>
+      <div class="sm-states">
+        <div class="sm-state" style="border-color:var(--green);background:rgba(0,255,170,0.06)">
+          <div class="ss-icon">😊</div>
+          <div class="ss-name" style="color:var(--green)">NORMAL</div>
+          <div class="ss-cond">prob ≥ 0.65<br>Mắt mở rõ ràng<br>Hiển thị xanh lá</div>
+        </div>
+        <div class="sm-state" style="border-color:var(--yellow);background:rgba(255,208,96,0.06)">
+          <div class="ss-icon">😐</div>
+          <div class="ss-name" style="color:var(--yellow)">WATCHING</div>
+          <div class="ss-cond">0.50 ≤ prob &lt; 0.65<br>Bắt đầu đếm giờ<br>Hiển thị vàng/cam</div>
+        </div>
+        <div class="sm-state" style="border-color:var(--red);background:rgba(255,68,68,0.06)">
+          <div class="ss-icon">😴</div>
+          <div class="ss-name" style="color:var(--red)">ALERT</div>
+          <div class="ss-cond">prob &lt; 0.50 liên tục ≥ 1.5s<br>CẢNH BÁO BUỒN NGỦ<br>Hiển thị đỏ + beep</div>
+        </div>
+      </div>
+      <div class="codeblock"><span class="cm"># Chạy realtime inference:</span>
+python realtime_cam.py --model drowsiness_asic_int8.tflite
+python realtime_cam.py --model .\model\drowsiness_asic_int8.tflite --duration 0.8</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: ASIC NOTES ═══ -->
+<div id="page-asic_notes" class="page">
+  <div class="topbar">
+    <div class="topbar-breadcrumb">Deploy / <span>ASIC RTL Notes</span></div>
+    <div class="topbar-actions"><span class="status status-output">🔧 RTL</span></div>
+  </div>
+  <div class="content">
+    <div class="page-header">
+      <div class="phase-tag">RTL ENGINEER NOTES</div>
+      <h1>ASIC RTL Implementation Notes</h1>
+      <p>Thông tin kỹ thuật cho RTL engineer. Tất cả scale factors, bit-widths, và formulas cần thiết để implement hardware.</p>
+    </div>
+
+    <div class="card accent-cyan">
+      <div class="card-title" style="color:var(--cyan)">⚡ TOÀN BỘ DATAPATH (Integer-Only)</div>
+      <div class="codeblock"><span class="cm">// Inference pipeline — không cần FPU</span>
+Input int8
+  → Subtract zero_point              <span class="cm">// 9-bit signed result</span>
+  → MAC (int8 × int9 → int32 acc)   <span class="cm">// per output channel</span>
+  → + Bias (int32)
+  → Requantize:
+      scaled  = acc × M_int32        <span class="cm">// int64 !</span>
+      shifted = scaled >>> total_shift
+      out_q   = clip(shifted + zp, -128, 127)
+  → ReLU: clip(out_q, 0, 127)       <span class="cm">// chỉ 1 comparator</span>
+  → Next layer (int8)
+
+<span class="cm">// Output layer: KHÔNG cần sigmoid!</span>
+fatigue = (out_i8 &lt;= zp_out)  <span class="cm">// zp_out = -2 → logit=0 boundary</span></div>
+    </div>
+
+    <div class="grid2" style="margin-top:4px">
+      <div class="card">
+        <div class="card-title" style="color:var(--yellow)">📐 BIT-WIDTH REQUIREMENTS</div>
+        <table class="dt">
+          <tr><th>Signal</th><th>Bits</th><th>Type</th></tr>
+          <tr><td>Input x</td><td>8</td><td style="color:var(--cyan)">int8</td></tr>
+          <tr><td>x − zp</td><td>9</td><td style="color:var(--violet)">int16 safe</td></tr>
+          <tr><td>Weight w</td><td>8</td><td style="color:var(--cyan)">int8</td></tr>
+          <tr><td>Product</td><td>17</td><td style="color:var(--violet)">int32 safe</td></tr>
+          <tr><td>Acc (128 MACs max)</td><td>32</td><td style="color:var(--violet)">int32 ✓</td></tr>
+          <tr><td>+ Bias</td><td>32</td><td style="color:var(--violet)">int32 ✓</td></tr>
+          <tr><td>acc × M_int32</td><td>64</td><td style="color:var(--orange)">int64 !</td></tr>
+          <tr><td>Output ReLU</td><td>8</td><td style="color:var(--cyan)">int8 ✓</td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color:var(--orange)">🗃️ KEY SCALE FACTORS</div>
+        <div class="ir"><span class="ik">Input scale</span><span class="iv c">1/128 = 0.0078125</span></div>
+        <div class="ir"><span class="ik">Input zp</span><span class="iv">−128</span></div>
+        <div class="ir"><span class="ik">Output scale</span><span class="iv c">≈ 0.0665</span></div>
+        <div class="ir"><span class="ik">Output zp</span><span class="iv o">−2</span></div>
+        <div class="ir"><span class="ik">FATIGUE threshold</span><span class="iv r">out_i8 ≤ −2</span></div>
+        <div class="ir"><span class="ik">ACTIVE threshold</span><span class="iv g">out_i8 > −2</span></div>
+        <div class="ir"><span class="ik">MaxPool requant</span><span class="iv g">KHÔNG CẦN (pass-through)</span></div>
+        <div class="ir"><span class="ik">BN khi inference</span><span class="iv g">KHÔNG CẦN (folded)</span></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title" style="color:var(--violet)">📊 REQUANTIZATION FORMULA</div>
+      <div class="codeblock"><span class="cm">// M_float = S_input × S_weight / S_output  (per output channel)</span>
+<span class="cm">// Decompose: M_float = M_int32 × 2^(-total_shift)</span>
+
+n        = floor(log2(M_float)) + 31    <span class="cm">// M_int32 near 2^31</span>
+M_int32  = round(M_float × 2^n)        <span class="cm">// int32, MSB ≈ 1</span>
+tot_shift= n                             <span class="cm">// typically 30–45</span>
+
+<span class="cm">// Verilog implementation:</span>
+wire [63:0] scaled  = $signed(acc) * $signed(M_int32);  <span class="cm">// int64!</span>
+wire [31:0] shifted = $signed(scaled) >>> tot_shift;
+wire [31:0] with_zp = shifted + zp_out;
+wire [ 7:0] out_q   = clip(with_zp, -128, 127);</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: ERRORS ═══ -->
+<div id="page-errors" class="page">
+  <div class="topbar">
+    <div class="topbar-breadcrumb">Reference / <span>Lỗi thường gặp</span></div>
+  </div>
+  <div class="content">
+    <div class="page-header">
+      <div class="phase-tag">TROUBLESHOOTING</div>
+      <h1>Lỗi Thường Gặp & Cách Fix</h1>
+      <p>Tổng hợp các lỗi đã gặp khi chạy pipeline, nguyên nhân và cách khắc phục.</p>
+    </div>
+
+    <div class="card accent-red">
+      <div class="card-title" style="color:var(--red)">🚨 LỖI COLAB — NGHIÊM TRỌNG</div>
+      <div class="step-list">
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(255,68,68,0.15);color:var(--red)">!</div>
+          <div class="step-body">
+            <div class="step-title" style="color:var(--red)">TF_USE_LEGACY_KERAS = "1" — KHÔNG BAO GIỜ SET</div>
+            <div class="step-desc">TF 2.16+ dùng Keras 3. Biến này phá vỡ compatibility giữa Keras 3 và tfmot. Xóa bỏ hoàn toàn khỏi code.</div>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(255,68,68,0.15);color:var(--red)">!</div>
+          <div class="step-body">
+            <div class="step-title" style="color:var(--red)">clone_model + set_weights(base_model.get_weights())</div>
+            <div class="step-desc">Bug: set_weights từ chính model clone của nó → weights bị reset về giá trị mặc định. Fix: lưu ra file .h5 rồi load lại với by_name=True, skip_mismatch=True.</div>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(255,208,96,0.15);color:var(--yellow)">⚠</div>
+          <div class="step-body">
+            <div class="step-title" style="color:var(--yellow)">!pip uninstall numpy !pip install numpy==1.26.4 (1 dòng)</div>
+            <div class="step-desc">Lỗi: shell parse thành 1 lệnh duy nhất. Fix: tách thành 2 lệnh riêng trên 2 dòng (hoặc 2 cell).</div>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(255,208,96,0.15);color:var(--yellow)">⚠</div>
+          <div class="step-body">
+            <div class="step-title" style="color:var(--yellow)">optimizer=keras.optimizers.Adam (non-legacy)</div>
+            <div class="step-desc">Gây lỗi với ReduceLROnPlateau trong TF 2.16+. Fix: dùng tf.keras.optimizers.legacy.Adam.</div>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num" style="background:rgba(255,208,96,0.15);color:var(--yellow)">⚠</div>
+          <div class="step-body">
+            <div class="step-title" style="color:var(--yellow)">representative_dataset overflow / clip</div>
+            <div class="step-desc">Thiếu .clip(-128, 127) trước khi cast int8 → numpy overflow. Fix: sample_int8 = np.round(sample/scale+zp).clip(-128, 127).astype(np.int8)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title" style="color:var(--yellow)">⚠️ LỖI LOCAL PIPELINE</div>
+      <table class="dt">
+        <thead><tr><th>Lỗi</th><th>Nguyên nhân</th><th>Fix</th></tr></thead>
+        <tbody>
+          <tr><td>FileNotFoundError: X_preprocessed_asic.npy</td><td>Chưa chạy preprocess_data_asic.py</td><td>Chạy run_all_asic.py trước</td></tr>
+          <tr><td>AssertionError: X_train phải là int8</td><td>Cache từ phiên bản cũ (float32)</td><td>Xóa cache .npy, chạy lại</td></tr>
+          <tr><td>Face cascade empty</td><td>OpenCV path sai</td><td>Kiểm tra cv2.data.haarcascades path</td></tr>
+          <tr><td>MediaPipe không detect landmarks</td><td>Ảnh quá tối, góc mặt lớn, hoặc ảnh quá nhỏ</td><td>Ảnh này sẽ dùng process_image_asic_friendly() thay thế</td></tr>
+          <tr><td>Memory error khi load .npy</td><td>Dataset quá lớn</td><td>Giảm số ảnh hoặc tăng RAM</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card" style="margin-top:4px">
+      <div class="card-title" style="color:var(--orange)">🔧 REALTIME INFERENCE ISSUES</div>
+      <table class="dt">
+        <thead><tr><th>Triệu chứng</th><th>Nguyên nhân</th><th>Fix</th></tr></thead>
+        <tbody>
+          <tr><td>Không bao giờ trigger ALERT</td><td>FATIGUE_THRESHOLD quá nhỏ (0.01)</td><td>Tăng lên 0.50 (log thực tế: prob buồn ngủ 0.06-0.41)</td></tr>
+          <tr><td>False positive nhiều</td><td>Threshold quá cao hoặc duration quá ngắn</td><td>Tăng MIN_DURATION lên 1.5s, dùng sliding window 5</td></tr>
+          <tr><td>Lag / FPS thấp</td><td>INFERENCE_STRIDE=3, landmark mỗi frame</td><td>Giảm stride về 2, cache landmark</td></tr>
+          <tr><td>Accuracy thấp so với Colab</td><td>Preprocessing không giống training</td><td>Đảm bảo đúng thứ tự: landmark→gray→resize→Q0.7</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE: CHECKLIST ═══ -->
+<div id="page-checklist" class="page">
+  <div class="topbar">
+    <div class="topbar-breadcrumb">Reference / <span>Checklist</span></div>
+    <div class="topbar-actions">
+      <button class="btn-sm" onclick="resetChecklist()">Reset</button>
+    </div>
+  </div>
+  <div class="content">
+    <div class="page-header">
+      <div class="phase-tag">DEPLOYMENT CHECKLIST</div>
+      <h1>Checklist Triển Khai</h1>
+      <p>Click vào từng mục để đánh dấu hoàn thành. Tiến độ được lưu trong session.</p>
+    </div>
+
+    <div class="grid2">
+      <div>
+        <div class="card accent-blue" style="margin-bottom:16px">
+          <div class="card-title" style="color:var(--blue)">💻 LOCAL PIPELINE</div>
+          <div class="checklist" id="check-local">
+            <div class="check-item" onclick="toggleCheck(this, 'local', 0)"><div class="check-box"></div><div class="check-text">Chỉnh BASE_DIR trong config_asic.py</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'local', 1)"><div class="check-box"></div><div class="check-text">pip install opencv-python mediapipe numpy scikit-learn tqdm</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'local', 2)"><div class="check-box"></div><div class="check-text">Dataset: FatigueSubjects/ và ActiveSubjects/ đủ ảnh</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'local', 3)"><div class="check-box"></div><div class="check-text">python run_all_asic.py — chạy thành công</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'local', 4)"><div class="check-box"></div><div class="check-text">4 file .npy tạo thành công trong PreprocessedData_ASIC/</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'local', 5)"><div class="check-box"></div><div class="check-text">verify_asic_friendly() trả về ✅ (dtype int8, shape 128×128, range [0,127])</div></div>
+          </div>
+        </div>
+
+        <div class="card accent-orange">
+          <div class="card-title" style="color:var(--orange)">☁️ GOOGLE COLAB</div>
+          <div class="checklist" id="check-colab">
+            <div class="check-item" onclick="toggleCheck(this, 'colab', 0)"><div class="check-box"></div><div class="check-text">Upload 4 file .npy lên Google Drive đúng đường dẫn DRIVE_PATH</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'colab', 1)"><div class="check-box"></div><div class="check-text">Cell 1: pip uninstall numpy + pip install numpy==1.26.4 (RIÊNG BIỆT)</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'colab', 2)"><div class="check-box"></div><div class="check-text">Restart Runtime sau khi cài numpy</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'colab', 3)"><div class="check-box"></div><div class="check-text">Cell 2: pip install tensorflow-model-optimization</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'colab', 4)"><div class="check-box"></div><div class="check-text">KHÔNG set TF_USE_LEGACY_KERAS</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'colab', 5)"><div class="check-box"></div><div class="check-text">Float32 training hoàn thành, val_accuracy > 90%</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'colab', 6)"><div class="check-box"></div><div class="check-text">QAT fine-tuning hoàn thành, accuracy drop < 1%</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'colab', 7)"><div class="check-box"></div><div class="check-text">INT8 export thành công, accuracy drop < 2% vs float32</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card accent-green" style="margin-bottom:16px">
+          <div class="card-title" style="color:var(--green)">📦 OUTPUT FILES</div>
+          <div class="checklist" id="check-output">
+            <div class="check-item" onclick="toggleCheck(this, 'output', 0)"><div class="check-box"></div><div class="check-text">base_weights.weights.h5 — float32 checkpoint</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'output', 1)"><div class="check-box"></div><div class="check-text">qat_weights.weights.h5 — QAT checkpoint</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'output', 2)"><div class="check-box"></div><div class="check-text">drowsiness_asic_int8.tflite — model ASIC-ready</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'output', 3)"><div class="check-box"></div><div class="check-text">asic_weights.h — C header cho RTL engineer</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'output', 4)"><div class="check-box"></div><div class="check-text">training_history.png — biểu đồ accuracy/loss</div></div>
+          </div>
+        </div>
+
+        <div class="card accent-violet">
+          <div class="card-title" style="color:var(--violet)">🔧 ASIC DEPLOYMENT</div>
+          <div class="checklist" id="check-asic">
+            <div class="check-item" onclick="toggleCheck(this, 'asic', 0)"><div class="check-box"></div><div class="check-text">RTL: Đọc input scale (1/128) và zp (−128) từ tflite metadata</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'asic', 1)"><div class="check-box"></div><div class="check-text">RTL: Đọc output scale (~0.0665) và zp (−2)</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'asic', 2)"><div class="check-box"></div><div class="check-text">RTL: Classifier dùng out_i8 > zp_out (không cần sigmoid)</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'asic', 3)"><div class="check-box"></div><div class="check-text">RTL: int64 multiplier cho requantization (acc × M_int32)</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'asic', 4)"><div class="check-box"></div><div class="check-text">RTL: MaxPool không cần requantization (pass-through scale/zp)</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'asic', 5)"><div class="check-box"></div><div class="check-text">RTL: BN đã fold — không implement BN block</div></div>
+            <div class="check-item" onclick="toggleCheck(this, 'asic', 6)"><div class="check-box"></div><div class="check-text">Realtime test: state machine NORMAL/WATCHING/ALERT hoạt động</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<script>
+// ─── Navigation ───────────────────────────────────────────────────
+function showPage(id, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const page = document.getElementById('page-' + id);
+  if (page) page.classList.add('active');
+  if (el) {
+    el.classList.add('active');
+  } else {
+    // Find matching nav item
+    document.querySelectorAll('.nav-item').forEach(n => {
+      if (n.getAttribute('onclick') && n.getAttribute('onclick').includes("'" + id + "'")) {
+        n.classList.add('active');
+      }
+    });
+  }
+  window.scrollTo(0, 0);
+}
+
+// ─── Copy code ────────────────────────────────────────────────────
+function copyCode(btn) {
+  const block = btn.previousElementSibling;
+  const text = block ? block.innerText : '';
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+// ─── Checklist ────────────────────────────────────────────────────
+const checkState = {};
+
+function toggleCheck(el, group, idx) {
+  const key = group + '_' + idx;
+  checkState[key] = !checkState[key];
+  el.classList.toggle('done', checkState[key]);
+  el.querySelector('.check-box').textContent = checkState[key] ? '✓' : '';
+  updateProgress();
+}
+
+function resetChecklist() {
+  Object.keys(checkState).forEach(k => { checkState[k] = false; });
+  document.querySelectorAll('.check-item').forEach(el => {
+    el.classList.remove('done');
+    el.querySelector('.check-box').textContent = '';
+  });
+  updateProgress();
+}
+
+function updateProgress() {
+  const total = Object.keys(checkState).length;
+  const done = Object.values(checkState).filter(Boolean).length;
+  const all = document.querySelectorAll('.check-item').length;
+  const pct = all > 0 ? Math.round((done / all) * 100) : 0;
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('progress-text').textContent = done + ' / ' + all + ' bước hoàn thành';
+}
+
+// ─── Init ─────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  // Count all checklist items
+  const items = document.querySelectorAll('.check-item');
+  document.getElementById('progress-text').textContent = '0 / ' + items.length + ' bước hoàn thành';
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.6.6 Chrome/144.0.7559.236 Electron/40.8.4 Safari/537.36" version="29.6.6">
+  <diagram name="Page-1" id="khdBYhPRUAIZTC_J53ly">
+    <mxGraphModel dx="1176" dy="818" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="OZbEA5wI-8AMTJ8Woc03-1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Ảnh từ camera" vertex="1">
+          <mxGeometry height="60" width="120" x="430" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="OZbEA5wI-8AMTJ8Woc03-4" edge="1" parent="1" source="OZbEA5wI-8AMTJ8Woc03-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="OZbEA5wI-8AMTJ8Woc03-3" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="OZbEA5wI-8AMTJ8Woc03-2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Haar cascade&lt;div&gt;Detect &amp;amp; crop mặt&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="120" x="230" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="OZbEA5wI-8AMTJ8Woc03-6" edge="1" parent="1" source="OZbEA5wI-8AMTJ8Woc03-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="OZbEA5wI-8AMTJ8Woc03-5" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="OZbEA5wI-8AMTJ8Woc03-3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Tim thấy mặt?&lt;br&gt;Haar output" vertex="1">
+          <mxGeometry height="60" width="120" x="430" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="OZbEA5wI-8AMTJ8Woc03-5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Bỏ qua Frame&lt;br&gt;Không có ROI" vertex="1">
+          <mxGeometry height="60" width="120" x="630" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="OZbEA5wI-8AMTJ8Woc03-10" edge="1" parent="1" source="OZbEA5wI-8AMTJ8Woc03-8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="OZbEA5wI-8AMTJ8Woc03-9" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="OZbEA5wI-8AMTJ8Woc03-8" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="MediaPipe FaceMesh&lt;div&gt;Vẽ mesh lên ROI&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="120" x="230" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="OZbEA5wI-8AMTJ8Woc03-12" edge="1" parent="1" source="OZbEA5wI-8AMTJ8Woc03-9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="OZbEA5wI-8AMTJ8Woc03-11" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="OZbEA5wI-8AMTJ8Woc03-9" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Cắt 2 mắt&lt;br&gt;-&amp;gt; resize 64x64" vertex="1">
+          <mxGeometry height="60" width="120" x="430" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="OZbEA5wI-8AMTJ8Woc03-11" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="BRG -&amp;gt; GRAY&lt;br&gt;-&amp;gt; resize 64x64" vertex="1">
+          <mxGeometry height="60" width="120" x="630" y="400" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

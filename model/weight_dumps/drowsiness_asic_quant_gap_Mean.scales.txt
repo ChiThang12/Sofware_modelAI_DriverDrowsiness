@@ -1,5 +1,0 @@
-// Scales: drowsiness_asic/quant_gap/Mean
-// real_value = scale[ch] * int8_value  (zero_point=0 untuk weight)
-
-// ch,  scale_f32,             scale_Q8.24
-   0,  0.016025481746,  00041A3F  // zp=-52

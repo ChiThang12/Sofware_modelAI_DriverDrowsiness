@@ -1,6 +1,7 @@
 """
 ASIC-Optimized Image Preprocessing
 Fixed-point arithmetic, power-of-2 operations, hardware-friendly
+Target size: 64x64 (2^6 x 2^6)
 """
 import cv2
 import numpy as np
@@ -10,114 +11,94 @@ from config_asic import (
     FIXED_POINT_FRAC_BITS,
     QUANTIZATION_MIN,
     QUANTIZATION_MAX,
-    USE_GRAYSCALE
+    USE_GRAYSCALE,
 )
+
+# log2(IMG_SIZE) dùng để tính địa chỉ pixel: addr = (y << LOG2_SIZE) + x
+import math
+LOG2_SIZE = int(math.log2(IMG_SIZE))  # 64 → 6
 
 
 def rgb_to_grayscale_optimized(img):
     """
-    Convert RGB to Grayscale using integer arithmetic
-    Uses approximation: Y = (R + G + B) / 3
-    
-    Hardware implementation:
-    Y = (R + G + B) >> 2  (approximate, very fast)
-    or
-    Y = ((R << 1) + (R << 2) + G + (G << 2) + (G << 3) + B) >> 4
-       (more accurate, uses shifts and adds only)
-    
+    Convert RGB to Grayscale dùng integer arithmetic.
+
+    Hardware implementation (approximation dùng shift + add):
+        Y ≈ (R >> 2) + (G >> 1) + (B >> 3)
+        (xấp xỉ trọng số BT.601: 0.299R + 0.587G + 0.114B)
+
     Args:
-        img: RGB image (H, W, 3)
-    
+        img: BGR image (H, W, 3) — OpenCV format
+
     Returns:
-        Grayscale image (H, W)
+        Grayscale image (H, W), dtype uint8
     """
-    # Option 1: OpenCV (for preprocessing, will be replaced in ASIC)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    
-    # Option 2: Simple average (ASIC-friendly)
-    # gray = (img[:, :, 0].astype(np.uint16) + 
-    #         img[:, :, 1].astype(np.uint16) + 
-    #         img[:, :, 2].astype(np.uint16)) // 3
-    
-    # Option 3: Weighted (more accurate, ASIC implementation uses shifts)
-    # Y = 0.299*R + 0.587*G + 0.114*B
-    # Approximation using shifts: Y ≈ (R>>2) + (G>>1) + (B>>3)
-    
     return gray.astype(np.uint8)
 
 
 def normalize_to_fixed_point(img_uint8):
     """
-    Convert uint8 [0, 255] to Q0.7 fixed-point int8 [0, 127]
-    
-    Formula: fixed_point = (uint8_value >> 1)
-    
-    This maps:
-    - 0 → 0
-    - 255 → 127
-    
-    In hardware: Just 1-bit right shift!
-    
+    Convert uint8 [0, 255]  →  Q0.7 fixed-point int8 [0, 127]
+
+    Formula: fixed_point = uint8_value >> 1
+
+    Mapping:
+        0   →   0
+        255 → 127
+
+    Hardware: chỉ 1 phép right-shift, không cần multiplier/divider.
+
     Args:
         img_uint8: uint8 image [0, 255]
-    
+
     Returns:
-        int8 image [0, 127] in Q0.7 format
+        int8 image [0, 127] — Q0.7 format
     """
-    # Method 1: Direct right shift (hardware uses this)
-    # fixed_point = img_uint8 >> 1
-    
-    # Method 2: Scale and convert (mathematically equivalent)
-    # Range [0, 255] → [0, 127]
     fixed_point = (img_uint8.astype(np.int16) >> 1).astype(np.int8)
-    
-    # Ensure values are in valid range
-    fixed_point = np.clip(fixed_point, 0, QUANTIZATION_MAX)
-    
-    return fixed_point
+    return np.clip(fixed_point, 0, QUANTIZATION_MAX)
 
 
 def denormalize_from_fixed_point(img_fixed):
     """
-    Convert Q0.7 fixed-point int8 back to uint8
-    
-    Formula: uint8 = (fixed_point << 1)
-    
+    Convert Q0.7 fixed-point int8  →  uint8 [0, 255]
+
+    Formula: uint8 = fixed_point << 1
+
     Args:
-        img_fixed: int8 image [0, 127] in Q0.7
-    
+        img_fixed: int8 image [0, 127]
+
     Returns:
-        uint8 image [0, 255]
+        uint8 image [0, 254]
     """
-    # Left shift by 1 bit
     uint8_img = (img_fixed.astype(np.int16) << 1).astype(np.uint8)
     return np.clip(uint8_img, 0, 255)
 
 
 def fixed_point_to_float(img_fixed):
     """
-    Convert Q0.7 fixed-point to float [0, 1] for training
-    
+    Convert Q0.7 fixed-point  →  float32 [0, ~1.0] để đưa vào model.
+
     Formula: float_value = fixed_point / 128.0
-    
+
     Args:
         img_fixed: int8 image [0, 127]
-    
+
     Returns:
-        float32 image [0, ~1.0]
+        float32 image [0.0, ~1.0]
     """
     return img_fixed.astype(np.float32) / SCALE_FACTOR
 
 
 def float_to_fixed_point(img_float):
     """
-    Convert float [0, 1] to Q0.7 fixed-point
-    
+    Convert float32 [0, 1]  →  Q0.7 fixed-point int8.
+
     Formula: fixed_point = round(float_value * 128)
-    
+
     Args:
         img_float: float32 image [0, 1]
-    
+
     Returns:
         int8 image [0, 127]
     """
@@ -127,106 +108,100 @@ def float_to_fixed_point(img_float):
 
 def resize_power_of_2(img, target_size=IMG_SIZE):
     """
-    Resize image to power-of-2 dimensions
-    
-    ASIC benefit: Power-of-2 size enables:
-    - Simple addressing: addr = (y << log2(width)) + x
-    - Efficient tiling
-    - Easy DMA transfers
-    
+    Resize image về kích thước power-of-2.
+
+    ASIC benefit:
+        - Địa chỉ pixel: addr = (y << log2(W)) + x  — chỉ dùng shift
+        - DMA transfer kích thước cố định
+        - Tile-friendly cho systolic array
+
     Args:
-        img: Input image
-        target_size: Target size (must be power of 2)
-    
+        img   : Input image (grayscale hoặc BGR)
+        target_size: Kích thước đích (phải là power-of-2)
+
     Returns:
-        Resized image
+        Resized image (target_size × target_size)
     """
-    # Verify power of 2
-    assert (target_size & (target_size - 1)) == 0, "Size must be power of 2"
-    
-    return cv2.resize(img, (target_size, target_size), 
-                     interpolation=cv2.INTER_AREA)
+    assert (target_size & (target_size - 1)) == 0, \
+        f"target_size phải là power-of-2, nhận được {target_size}"
+    return cv2.resize(img, (target_size, target_size),
+                      interpolation=cv2.INTER_AREA)
 
 
 def process_image_asic_friendly(img):
     """
-    Full ASIC-friendly preprocessing pipeline
-    
-    Steps:
-    1. Convert to grayscale (if needed)
-    2. Resize to power-of-2 (128x128)
-    3. Normalize to Q0.7 fixed-point [0, 127]
-    
-    All operations are hardware-friendly:
-    - Bit shifts instead of multiply/divide
-    - Integer arithmetic only
-    - Memory-aligned dimensions
-    
+    Full ASIC-friendly preprocessing pipeline cho 1 ảnh.
+
+    Bước 1 — Grayscale:  BGR → Gray  (integer arithmetic)
+    Bước 2 — Resize:     → 64×64     (power-of-2, INTER_AREA)
+    Bước 3 — Quantize:   uint8 >> 1  → int8 Q0.7 [0, 127]
+
+    Tất cả operations hardware-friendly:
+        - Bit shift thay vì multiply/divide
+        - Integer arithmetic only
+        - Memory-aligned dimensions
+
     Args:
-        img: Input image (BGR format from OpenCV)
-    
+        img: BGR image (H, W, 3) từ OpenCV
+
     Returns:
-        Preprocessed image in Q0.7 fixed-point format (int8)
+        int8 array (64, 64) — Q0.7 fixed-point
     """
-    # Step 1: Grayscale conversion
+    # Bước 1: Grayscale
     if len(img.shape) == 3 and USE_GRAYSCALE:
         img_gray = rgb_to_grayscale_optimized(img)
     else:
         img_gray = img
-    
-    # Step 2: Resize to power-of-2
+
+    # Bước 2: Resize về 64×64
     img_resized = resize_power_of_2(img_gray, IMG_SIZE)
-    
-    # Step 3: Convert to Q0.7 fixed-point
+
+    # Bước 3: Normalize → Q0.7 int8
     img_fixed = normalize_to_fixed_point(img_resized)
-    
+
     return img_fixed
 
 
 def verify_asic_friendly(img_fixed):
     """
-    Verify that image is ASIC-friendly
-    
+    Kiểm tra ảnh đã đúng chuẩn ASIC chưa.
+
     Checks:
-    - Dimensions are power of 2
-    - Data type is int8
-    - Values in valid range
-    - Memory alignment
-    
+        - Kích thước là power-of-2 và khớp IMG_SIZE (64×64)
+        - dtype = int8
+        - Giá trị trong [0, 127]
+        - Memory alignment
+
     Args:
         img_fixed: Preprocessed image
-    
+
     Returns:
-        bool: True if ASIC-friendly
+        bool: True nếu ASIC-friendly
     """
     h, w = img_fixed.shape[:2]
-    
-    # Check power of 2
+
     if (h & (h - 1)) != 0 or (w & (w - 1)) != 0:
-        print(f"❌ Dimensions not power of 2: {h}x{w}")
+        print(f"  Dimensions not power of 2: {h}x{w}")
         return False
-    
-    # Check dtype
+
     if img_fixed.dtype != np.int8:
-        print(f"❌ Data type not int8: {img_fixed.dtype}")
+        print(f"  Data type not int8: {img_fixed.dtype}")
         return False
-    
-    # Check range
+
     if img_fixed.min() < 0 or img_fixed.max() > QUANTIZATION_MAX:
-        print(f"❌ Values out of range: [{img_fixed.min()}, {img_fixed.max()}]")
+        print(f"  Values out of range: [{img_fixed.min()}, {img_fixed.max()}]")
         return False
-    
-    # Check size matches config
+
     if h != IMG_SIZE or w != IMG_SIZE:
-        print(f"❌ Size mismatch: {h}x{w} vs {IMG_SIZE}x{IMG_SIZE}")
+        print(f"  Size mismatch: {h}x{w} vs {IMG_SIZE}x{IMG_SIZE}")
         return False
-    
-    print(f"✅ Image is ASIC-friendly:")
-    print(f"   Size: {h}x{w} (power of 2)")
-    print(f"   Dtype: {img_fixed.dtype}")
-    print(f"   Range: [{img_fixed.min()}, {img_fixed.max()}]")
-    print(f"   Memory: {img_fixed.nbytes} bytes")
-    
+
+    print(f"  Image is ASIC-friendly:")
+    print(f"    Size  : {h}x{w} (2^{LOG2_SIZE} x 2^{LOG2_SIZE})")
+    print(f"    Dtype : {img_fixed.dtype}")
+    print(f"    Range : [{img_fixed.min()}, {img_fixed.max()}]")
+    print(f"    Memory: {img_fixed.nbytes} bytes ({img_fixed.nbytes/1024:.2f} KB)")
+
     return True
 
 
@@ -235,60 +210,54 @@ def verify_asic_friendly(img_fixed):
 # ===================================================================
 def simulate_asic_inference(img_fixed):
     """
-    Simulate how ASIC would process the image
-    
-    This shows the bit-level operations ASIC will perform
+    Mô phỏng cách ASIC xử lý ảnh ở mức bit.
     """
-    print("\n" + "="*70)
-    print("ASIC HARDWARE SIMULATION")
-    print("="*70)
-    
-    # Image dimensions
+    print("\n" + "=" * 70)
+    print("ASIC HARDWARE SIMULATION  —  64x64 Q0.7 int8")
+    print("=" * 70)
+
     h, w = img_fixed.shape
     print(f"\n1. Image Dimensions: {h}x{w}")
-    print(f"   Address calculation: addr = (y << 7) + x")
-    print(f"   Total pixels: {h * w} = 2^14")
-    
-    # Memory layout
+    print(f"   Address: addr = (y << {LOG2_SIZE}) + x")
+    print(f"   Total pixels: {h * w} = 2^{int(math.log2(h * w))}")
+
     print(f"\n2. Memory Layout:")
-    print(f"   Base address: 0x0000")
-    print(f"   Size: {img_fixed.nbytes} bytes ({img_fixed.nbytes/1024:.1f} KB)")
-    print(f"   Alignment: {img_fixed.nbytes % 16} bytes offset (should be 0)")
-    
-    # Sample pixel access
-    y, x = 64, 64  # Center pixel
-    pixel_value = img_fixed[y, x]
-    addr = (y << 7) + x  # Bit-shift addressing
-    
-    print(f"\n3. Sample Pixel Access:")
-    print(f"   Coordinates: ({y}, {x})")
-    print(f"   Address: (64 << 7) + 64 = {addr} (0x{addr:04X})")
-    print(f"   Value: {pixel_value} (0x{pixel_value:02X})")
-    print(f"   Binary: {pixel_value:08b}")
-    print(f"   Float: {pixel_value / SCALE_FACTOR:.6f}")
-    
-    # Demonstrate bit-shift normalization
-    print(f"\n4. Fixed-Point Conversion (Hardware):")
-    print(f"   Input uint8: 128 (example)")
-    print(f"   Right shift 1: 128 >> 1 = 64")
-    print(f"   Output int8: 64 (Q0.7 format)")
-    print(f"   Represents: 64/128 = 0.5 (float)")
-    
+    print(f"   Size  : {img_fixed.nbytes} bytes ({img_fixed.nbytes / 1024:.2f} KB)")
+    align_offset = img_fixed.nbytes % 16
+    print(f"   Align : {align_offset} bytes offset (expected 0)")
+
+    # Sample pixel — center của ảnh 64x64
+    cy, cx = IMG_SIZE // 2, IMG_SIZE // 2
+    pixel_value = img_fixed[cy, cx]
+    addr = (cy << LOG2_SIZE) + cx
+
+    print(f"\n3. Sample Pixel (center {cy},{cx}):")
+    print(f"   Address : ({cy} << {LOG2_SIZE}) + {cx} = {addr}  (0x{addr:04X})")
+    print(f"   int8    : {pixel_value}  (0x{int(pixel_value) & 0xFF:02X})")
+    print(f"   binary  : {int(pixel_value) & 0xFF:08b}")
+    print(f"   float   : {pixel_value / SCALE_FACTOR:.6f}")
+
+    print(f"\n4. Fixed-Point Normalization (Hardware):")
+    print(f"   Input  uint8 = 128  →  128 >> 1 = 64  (int8 Q0.7)")
+    print(f"   Represents: 64 / {SCALE_FACTOR} = {64 / SCALE_FACTOR:.4f}")
+    print(f"   Input  uint8 = 200  →  200 >> 1 = 100 (int8 Q0.7)")
+    print(f"   Represents: 100 / {SCALE_FACTOR} = {100 / SCALE_FACTOR:.4f}")
+
     print(f"\n5. ASIC Operations:")
-    print(f"   ✓ No multiplication for normalization (just bit shift)")
-    print(f"   ✓ No division (right shift = divide by 2^n)")
-    print(f"   ✓ No floating-point unit needed")
-    print(f"   ✓ Simple indexing with bit shifts")
-    print(f"   ✓ DMA-friendly contiguous memory")
-    
-    print("="*70)
+    print(f"   Normalization  : uint8 >> 1  (no multiplier)")
+    print(f"   Pixel address  : (y << {LOG2_SIZE}) + x  (no multiply)")
+    print(f"   DMA block size : {img_fixed.nbytes} bytes")
+    print(f"   No FPU required")
+
+    print("=" * 70)
 
 
 if __name__ == "__main__":
     print("ASIC-Friendly Image Preprocessing Module")
-    print("="*70)
-    print(f"Target format: Q0.{FIXED_POINT_FRAC_BITS} fixed-point")
-    print(f"Image size: {IMG_SIZE}x{IMG_SIZE} (2^7 x 2^7)")
-    print(f"Data type: int8")
-    print(f"Scale factor: {SCALE_FACTOR}")
-    print("="*70)
+    print("=" * 70)
+    print(f"Target format : Q{0}.{FIXED_POINT_FRAC_BITS} fixed-point (int8)")
+    print(f"Image size    : {IMG_SIZE}x{IMG_SIZE}  (2^{LOG2_SIZE} x 2^{LOG2_SIZE})")
+    print(f"Data type     : int8")
+    print(f"Scale factor  : {SCALE_FACTOR}")
+    print(f"Pixel address : (y << {LOG2_SIZE}) + x")
+    print("=" * 70)

@@ -1,5 +1,0 @@
-// Scales: drowsiness_asic/quant_fc1/MatMul;drowsiness_asic/quant_relu_fc/Relu;drowsiness_asic/quant_fc1/BiasAdd
-// real_value = scale[ch] * int8_value  (zero_point=0 untuk weight)
-
-// ch,  scale_f32,             scale_Q8.24
-   0,  0.022260135040,  0005B2D7  // zp=-73

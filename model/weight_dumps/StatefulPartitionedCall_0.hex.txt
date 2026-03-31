@@ -1,4 +1,0 @@
-// StatefulPartitionedCall:0
-// $readmemh("StatefulPartitionedCall_0.hex.txt", mem);
-
-D0

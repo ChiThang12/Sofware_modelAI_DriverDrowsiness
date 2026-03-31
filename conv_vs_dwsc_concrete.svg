@@ -1,0 +1,219 @@
+
+<svg width="100%" viewBox="0 0 680 980">
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<!-- ===== PHẦN 1: CONV TIÊU CHUẨN ===== -->
+<rect x="20" y="10" width="640" height="430" rx="12" fill="none" stroke="var(--color-border-secondary)" stroke-width="1"/>
+<text class="th" x="340" y="38" text-anchor="middle" font-size="15">Convolution tiêu chuẩn</text>
+<text class="ts" x="340" y="58" text-anchor="middle">Ví dụ: ảnh 5×5, 3 channels đầu vào, 2 filters → 2 channels đầu ra</text>
+
+<!-- Input: 3 channels stacked -->
+<text class="ts" x="90" y="92" text-anchor="middle">Đầu vào</text>
+<text class="ts" x="90" y="108" text-anchor="middle">(5×5×3)</text>
+
+<g class="c-blue">
+  <rect x="34" y="118" width="54" height="54" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="61" y="149" text-anchor="middle" dominant-baseline="central">ch 1</text>
+</g>
+<g class="c-blue" style="opacity:0.7">
+  <rect x="44" y="126" width="54" height="54" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="71" y="157" text-anchor="middle" dominant-baseline="central">ch 2</text>
+</g>
+<g class="c-blue" style="opacity:0.45">
+  <rect x="54" y="134" width="54" height="54" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="81" y="165" text-anchor="middle" dominant-baseline="central">ch 3</text>
+</g>
+
+<!-- arrow -->
+<line x1="118" y1="165" x2="150" y2="165" class="arr" marker-end="url(#arrow)"/>
+
+<!-- Filter 1: một khối 3×3×3 -->
+<text class="ts" x="220" y="92" text-anchor="middle">Filter 1</text>
+<text class="ts" x="220" y="108" text-anchor="middle">(3×3×3)</text>
+
+<g class="c-coral">
+  <rect x="155" y="118" width="44" height="44" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="177" y="143" text-anchor="middle" dominant-baseline="central">ch 1</text>
+</g>
+<g class="c-coral" style="opacity:0.7">
+  <rect x="163" y="126" width="44" height="44" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="185" y="151" text-anchor="middle" dominant-baseline="central">ch 2</text>
+</g>
+<g class="c-coral" style="opacity:0.45">
+  <rect x="171" y="134" width="44" height="44" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="193" y="159" text-anchor="middle" dominant-baseline="central">ch 3</text>
+</g>
+
+<!-- Filter 2 -->
+<text class="ts" x="290" y="92" text-anchor="middle">Filter 2</text>
+<text class="ts" x="290" y="108" text-anchor="middle">(3×3×3)</text>
+
+<g class="c-amber">
+  <rect x="255" y="118" width="44" height="44" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="277" y="143" text-anchor="middle" dominant-baseline="central">ch 1</text>
+</g>
+<g class="c-amber" style="opacity:0.7">
+  <rect x="263" y="126" width="44" height="44" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="285" y="151" text-anchor="middle" dominant-baseline="central">ch 2</text>
+</g>
+<g class="c-amber" style="opacity:0.45">
+  <rect x="271" y="134" width="44" height="44" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="293" y="159" text-anchor="middle" dominant-baseline="central">ch 3</text>
+</g>
+
+<!-- mũi tên vào output -->
+<line x1="320" y1="165" x2="370" y2="165" class="arr" marker-end="url(#arrow)"/>
+
+<!-- Output -->
+<text class="ts" x="460" y="92" text-anchor="middle">Đầu ra</text>
+<text class="ts" x="460" y="108" text-anchor="middle">(5×5×2)</text>
+
+<g class="c-teal">
+  <rect x="378" y="118" width="54" height="54" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="405" y="149" text-anchor="middle" dominant-baseline="central">out ch 1</text>
+</g>
+<g class="c-teal" style="opacity:0.65">
+  <rect x="390" y="130" width="54" height="54" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="417" y="161" text-anchor="middle" dominant-baseline="central">out ch 2</text>
+</g>
+
+<!-- KEY INSIGHT -->
+<rect x="34" y="218" width="610" height="82" rx="8" fill="none" stroke="var(--color-border-secondary)" stroke-width="0.5"/>
+<text class="th" x="339" y="242" text-anchor="middle">Điều quan trọng: mỗi filter đi qua TẤT CẢ channels cùng lúc</text>
+<text class="ts" x="339" y="265" text-anchor="middle">Filter 1 nhìn ch1 + ch2 + ch3 đồng thời → cộng lại → tạo ra 1 output channel</text>
+<text class="ts" x="339" y="285" text-anchor="middle">Filter 2 nhìn ch1 + ch2 + ch3 đồng thời → cộng lại → tạo ra 1 output channel</text>
+
+<!-- Cost -->
+<g class="c-red">
+  <rect x="34" y="316" width="610" height="110" rx="8" stroke-width="0.5"/>
+  <text class="th" x="339" y="342" text-anchor="middle">Chi phí tính toán</text>
+  <text class="ts" x="339" y="368" text-anchor="middle">DK × DK × M × N × DF × DF</text>
+  <text class="ts" x="339" y="392" text-anchor="middle">= 3 × 3 × 3 × 2 × 5 × 5</text>
+  <text class="th" x="339" y="416" text-anchor="middle">= 1,350 phép nhân-cộng</text>
+</g>
+
+<!-- ===== PHẦN 2: DEPTHWISE SEPARABLE ===== -->
+<rect x="20" y="458" width="640" height="510" rx="12" fill="none" stroke="var(--color-border-secondary)" stroke-width="1"/>
+<text class="th" x="340" y="486" text-anchor="middle" font-size="15">Depthwise Separable Convolution</text>
+<text class="ts" x="340" y="506" text-anchor="middle">Cùng bài toán trên, nhưng tách thành 2 bước</text>
+
+<!-- STEP 1 label -->
+<text class="th" x="340" y="534" text-anchor="middle" font-size="13">BƯỚC 1 — Depthwise Convolution</text>
+<text class="ts" x="340" y="552" text-anchor="middle">Mỗi channel dùng 1 filter riêng, KHÔNG trộn channels với nhau</text>
+
+<!-- ch1 riêng -->
+<g class="c-blue">
+  <rect x="34" y="566" width="50" height="50" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="59" y="595" text-anchor="middle" dominant-baseline="central">ch 1</text>
+</g>
+<text class="ts" x="96" y="595" text-anchor="start" dominant-baseline="central">×</text>
+<g class="c-blue" style="opacity:0.6">
+  <rect x="112" y="574" width="36" height="36" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="130" y="594" text-anchor="middle" dominant-baseline="central">f1</text>
+</g>
+<line x1="150" y1="594" x2="168" y2="594" class="arr" marker-end="url(#arrow)"/>
+<g class="c-teal">
+  <rect x="170" y="566" width="50" height="50" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="195" y="595" text-anchor="middle" dominant-baseline="central">out 1</text>
+</g>
+
+<!-- ch2 riêng -->
+<g class="c-blue">
+  <rect x="34" y="632" width="50" height="50" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="59" y="661" text-anchor="middle" dominant-baseline="central">ch 2</text>
+</g>
+<text class="ts" x="96" y="661" text-anchor="start" dominant-baseline="central">×</text>
+<g class="c-blue" style="opacity:0.6">
+  <rect x="112" y="640" width="36" height="36" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="130" y="660" text-anchor="middle" dominant-baseline="central">f2</text>
+</g>
+<line x1="150" y1="660" x2="168" y2="660" class="arr" marker-end="url(#arrow)"/>
+<g class="c-teal">
+  <rect x="170" y="632" width="50" height="50" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="195" y="661" text-anchor="middle" dominant-baseline="central">out 2</text>
+</g>
+
+<!-- ch3 riêng -->
+<g class="c-blue">
+  <rect x="34" y="698" width="50" height="50" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="59" y="727" text-anchor="middle" dominant-baseline="central">ch 3</text>
+</g>
+<text class="ts" x="96" y="727" text-anchor="start" dominant-baseline="central">×</text>
+<g class="c-blue" style="opacity:0.6">
+  <rect x="112" y="706" width="36" height="36" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="130" y="726" text-anchor="middle" dominant-baseline="central">f3</text>
+</g>
+<line x1="150" y1="726" x2="168" y2="726" class="arr" marker-end="url(#arrow)"/>
+<g class="c-teal">
+  <rect x="170" y="698" width="50" height="50" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="195" y="727" text-anchor="middle" dominant-baseline="central">out 3</text>
+</g>
+
+<text class="ts" x="110" y="768" text-anchor="middle" fill="var(--color-text-secondary)">3 filters riêng biệt, mỗi cái 3×3</text>
+<text class="ts" x="110" y="785" text-anchor="middle" fill="var(--color-text-secondary)">chưa có trộn channels</text>
+
+<!-- STEP 2 -->
+<line x1="232" y1="660" x2="268" y2="660" class="arr" marker-end="url(#arrow)"/>
+<text class="th" x="450" y="570" text-anchor="middle" font-size="13">BƯỚC 2 — Pointwise Conv (1×1)</text>
+<text class="ts" x="450" y="590" text-anchor="middle">Dùng filter 1×1 để TRỘN các channels lại</text>
+
+<!-- 3 channels vào 1×1 conv -->
+<g class="c-teal">
+  <rect x="278" y="610" width="40" height="40" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="298" y="634" text-anchor="middle" dominant-baseline="central">out1</text>
+</g>
+<g class="c-teal" style="opacity:0.7">
+  <rect x="278" y="660" width="40" height="40" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="298" y="684" text-anchor="middle" dominant-baseline="central">out2</text>
+</g>
+<g class="c-teal" style="opacity:0.45">
+  <rect x="278" y="710" width="40" height="40" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="298" y="734" text-anchor="middle" dominant-baseline="central">out3</text>
+</g>
+
+<line x1="320" y1="640" x2="356" y2="675" class="arr" marker-end="url(#arrow)"/>
+<line x1="320" y1="680" x2="356" y2="680" class="arr" marker-end="url(#arrow)"/>
+<line x1="320" y1="730" x2="356" y2="685" class="arr" marker-end="url(#arrow)"/>
+
+<!-- 1x1 filters -->
+<g class="c-purple">
+  <rect x="358" y="614" width="50" height="50" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="383" y="636" text-anchor="middle" dominant-baseline="central">1×1</text>
+  <text class="ts" x="383" y="652" text-anchor="middle" dominant-baseline="central">filter A</text>
+</g>
+<g class="c-amber">
+  <rect x="358" y="676" width="50" height="50" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="383" y="698" text-anchor="middle" dominant-baseline="central">1×1</text>
+  <text class="ts" x="383" y="714" text-anchor="middle" dominant-baseline="central">filter B</text>
+</g>
+
+<line x1="410" y1="640" x2="440" y2="640" class="arr" marker-end="url(#arrow)"/>
+<line x1="410" y1="702" x2="440" y2="702" class="arr" marker-end="url(#arrow)"/>
+
+<!-- final output -->
+<g class="c-teal">
+  <rect x="442" y="610" width="54" height="54" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="469" y="639" text-anchor="middle" dominant-baseline="central">ch 1 mới</text>
+</g>
+<g class="c-teal" style="opacity:0.65">
+  <rect x="442" y="672" width="54" height="54" rx="4" stroke-width="0.5"/>
+  <text class="ts" x="469" y="701" text-anchor="middle" dominant-baseline="central">ch 2 mới</text>
+</g>
+<text class="ts" x="469" y="748" text-anchor="middle">= đầu ra 5×5×2</text>
+<text class="ts" x="469" y="765" text-anchor="middle">(giống y chang conv thường!)</text>
+
+<!-- Cost DwSC -->
+<g class="c-teal">
+  <rect x="34" y="800" width="610" height="136" rx="8" stroke-width="0.5"/>
+  <text class="th" x="339" y="826" text-anchor="middle">Chi phí tính toán — DwSC</text>
+  <text class="ts" x="339" y="850" text-anchor="middle">Bước 1 (DW): DK×DK × M × DF×DF = 3×3 × 3 × 5×5 = 675</text>
+  <text class="ts" x="339" y="874" text-anchor="middle">Bước 2 (PW): M × N × DF×DF = 3 × 2 × 5×5 = 150</text>
+  <text class="th" x="339" y="898" text-anchor="middle">Tổng = 825 phép (so với 1,350 của conv thường)</text>
+  <text class="ts" x="339" y="922" text-anchor="middle">→ tiết kiệm ~40% trong ví dụ nhỏ này; với mạng thực tế tiết kiệm 8–9×</text>
+</g>
+
+</svg>
